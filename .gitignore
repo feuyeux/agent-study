@@ -1,0 +1,11 @@
+*.js
+*.txt
+*.ps1
+*.sh
+.claude
+claude-code/
+codex/
+gemini-cli/
+openclaw/
+opencode/
+zeroclaw/
