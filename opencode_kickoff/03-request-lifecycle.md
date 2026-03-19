@@ -1,8 +1,8 @@
 # 一次请求的完整生命周期：一条用户输入怎样被编译成 durable execution log
 
-主向导对应章节：`一次请求的完整生命周期`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** II. 请求生命周期
+> **前置阅读** [02-架构总图](./02-architecture-diagram.md)
+> **后续阅读** [04-session中心化](./04-session-centric-runtime.md) · [10-loop与processor](./10-loop-and-processor.md)
 
 ```mermaid
 flowchart LR
@@ -18,8 +18,6 @@ flowchart LR
     Update --> Return{continue<br/>compact<br/>stop}
     Return --> Loop
 ```
-
-
 
 最值得跟读的一条链是：`POST /session/:sessionID/message`（`packages/opencode/src/server/routes/session.ts:781-820`）调用 `SessionPrompt.prompt()`（`packages/opencode/src/session/prompt.ts:161-188`），后者先用 `SessionRevert.cleanup()` 清理回滚状态，再把输入交给 `SessionPrompt.createUserMessage()`（`packages/opencode/src/session/prompt.ts:965-1355`）落成真正的 user message，最后进入 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）。请求在这里就已经从“HTTP 调用”变成了“session runtime 的一次推进”。
 

@@ -1,8 +1,8 @@
 # 上下文工程并不只发生在 system prompt：OpenCode 在多个阶段共同塑造模型视角
 
-主向导对应章节：`上下文工程`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程
+> **前置阅读** [05-对象模型](./05-object-model.md)
+> **后续阅读** [07-system装配链](./07-context-system-and-instructions.md) · [08-输入预处理](./08-context-input-and-history-rewrite.md) · [09-注入顺序](./09-context-injection-order.md)
 
 ```mermaid
 flowchart TB
@@ -19,8 +19,6 @@ flowchart TB
     L4 --> L4A[filterCompacted裁剪]
     L4 --> L4B[SessionCompaction重放]
 ```
-
-<br/><br/>
 
 如果把 OpenCode 的上下文工程只理解成 `SystemPrompt.provider()`（`packages/opencode/src/session/system.ts:22-30`）或几份 prompt 模板，那会漏掉大半实现。真正决定模型“看见什么”的，是从 `SessionPrompt.createUserMessage()`（`packages/opencode/src/session/prompt.ts:965-1355`）到 `ProviderTransform.message()`（`packages/opencode/src/provider/transform.ts:252-289`）的一整条流水线。
 

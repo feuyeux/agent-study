@@ -1,11 +1,10 @@
 # 最终心智模型：把 OpenCode 看成”以 durable log 为真相源的 session 调度器”
 
-主向导对应章节：`最终心智模型`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** IX. 设计哲学
+> **前置阅读** [18-阅读路径](./18-reading-path.md)
 
 ```mermaid
-graph TB
+graph LR
     Server[Server.createApp] --> Prompt[SessionPrompt.prompt]
     Prompt --> Loop[SessionPrompt.loop<br/>调度durable task]
     Loop --> Process[SessionProcessor.process<br/>生产durable part]
@@ -16,8 +15,6 @@ graph TB
     Loop -->|fork/compaction/permission| Log
     Process -->|写part| Log
 ```
-
-&nbsp;
 
 如果只保留一句话，我会把 OpenCode 解释成这样：`Server.createApp()`（`packages/opencode/src/server/server.ts:58-575`）把请求装进实例上下文，`SessionPrompt.prompt()`（`packages/opencode/src/session/prompt.ts:161-188`）把输入落成 user message，`SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）决定当前 session 下一步应该消费哪类任务，`SessionProcessor.process()`（`packages/opencode/src/session/processor.ts:46-425`）把单轮模型流翻译成 `MessageV2.Part`（`packages/opencode/src/session/message-v2.ts:377-395`），而 `Session.updateMessage()`（`packages/opencode/src/session/index.ts:686-706`）与 `Session.updatePart()`（`packages/opencode/src/session/index.ts:755-776`）把这一切写回持久化轨迹。
 

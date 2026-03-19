@@ -1,8 +1,8 @@
 # 为什么不同入口看到的 agent 行为会不一样：共享主循环，不共享初始化条件
 
-主向导对应章节：`为什么不同入口看到的 agent 行为会不一样`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** I. 入口与架构
+> **前置阅读** [01-runtime-host](./01-runtime-host.md) · [14-硬编码与可配置](./14-hardcoded-vs-configurable.md)
+> **后续阅读** [16-观测性](./16-observability.md)
 
 ```mermaid
 graph TB
@@ -21,8 +21,6 @@ graph TB
     InstCtx -->|目录/workspace绑定| Loop
     UIAgent -->|改变下次agent| Loop
 ```
-
-&nbsp;
 
 不同入口共用的是 `SessionRoutes`（`packages/opencode/src/server/routes/session.ts:25-1023`）和后面的 `SessionPrompt.prompt()`（`packages/opencode/src/session/prompt.ts:161-188`）、`SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）、`SessionProcessor.process()`（`packages/opencode/src/session/processor.ts:46-425`），不是共用“完全相同的初始 session”。行为差异大多发生在 runtime 之前，也就是 session 是怎么建出来、带了什么 permission、用哪个 agent、在哪个 directory 下被打开。
 

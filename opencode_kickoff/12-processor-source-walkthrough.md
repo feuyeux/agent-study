@@ -1,9 +1,8 @@
 # processor 源码逐段解剖：单轮执行怎样被写成 durable parts
 
-- [一次请求的完整生命周期：请求如何进入主链](./03-request-lifecycle.md)
-- [loop 与 processor：两层状态机的边界](./10-loop-and-processor.md)
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VI. 状态机双层架构
+> **前置阅读** [10-loop与processor](./10-loop-and-processor.md) · [11-loop源码解剖](./11-loop-source-walkthrough.md)
+> **后续阅读** [13-高级能力](./13-advanced-primitives.md) · [21-错误恢复](./21-error-recovery.md)
 
 ```mermaid
 flowchart TB
@@ -19,8 +18,6 @@ flowchart TB
         StepFinish --> Return{compact<br/>stop<br/>continue}
     end
 ```
-
-&nbsp;
 
 `SessionProcessor.create()`（`packages/opencode/src/session/processor.ts:27-429`）返回的对象本身很薄，真正的重心是 `process()`（`packages/opencode/src/session/processor.ts:46-425`）。这个函数不关心 session 还有没有 pending subtask，也不关心下一轮是否该启动；它只负责把当前一次 `LLM.stream()`（`packages/opencode/src/session/llm.ts:47-257`）产生的事件序列翻译成 part。
 

@@ -1,8 +1,7 @@
 # 从入口到宿主：OpenCode 的 agent 实际运行在哪里
 
-主向导对应章节：`从入口到宿主`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** I. 入口与宿主
+> **后续阅读** [02-架构总图](./02-architecture-diagram.md) · [15-入口差异](./15-client-differences.md)
 
 ```mermaid
 graph LR
@@ -14,8 +13,6 @@ graph LR
     Runtime -->|读/写| Session[(Session.Info<br/>+ MessageV2.Part)]
     Runtime -->|Bus.publish| Event[事件流 SSE]
 ```
-
-<br/><br/>
 
 OpenCode 的 agent 不住在 CLI 里。`RunCommand.handler()`（`packages/opencode/src/cli/cmd/run.ts:306-672`）真正做的事，是解析参数、补齐附件、创建或选择 session（`packages/opencode/src/cli/cmd/run.ts:381-394`），然后订阅 `/event` 流并把 `message.part.updated` 渲染成终端输出（`packages/opencode/src/cli/cmd/run.ts:441-553`）。它是 client，而不是宿主。
 

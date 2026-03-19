@@ -1,8 +1,8 @@
 # 为什么 session 才是中心：源码里它定义的是执行边界，而不是聊天容器
 
-主向导对应章节：`为什么 session 才是中心`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** III. Session 与状态模型
+> **前置阅读** [03-request-lifecycle](./03-request-lifecycle.md)
+> **后续阅读** [05-对象模型](./05-object-model.md) · [20-持久化与存储](./20-storage-and-persistence.md)
 
 ```mermaid
 graph TB
@@ -18,8 +18,6 @@ graph TB
     SessionFork[Session.fork] --> SessionInfo
     SessionSetPerm[Session.setPermission] --> SessionInfo
 ```
-
-<br/><br/>
 
 把 OpenCode 看成”多轮聊天 + 工具调用”时，最容易低估的就是 `Session.Info`（`packages/opencode/src/session/index.ts:122-164`）。从字段上看，它似乎只是一些元数据；但沿着实现看，会发现 session 决定了工作目录、workspace、父子关系、权限、summary、share、revert 等所有执行边界。OpenCode 里真正长期存活的主体不是 CLI 进程，而是 session。
 

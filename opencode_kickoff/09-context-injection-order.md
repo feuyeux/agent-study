@@ -1,8 +1,8 @@
 # 上下文注入顺序图：OpenCode 真正控制的是装配顺序，不只是装配内容
 
-主向导对应章节：`上下文注入顺序图`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程
+> **前置阅读** [08-输入预处理与历史重写](./08-context-input-and-history-rewrite.md)
+> **后续阅读** [10-loop与processor](./10-loop-and-processor.md)
 
 ```mermaid
 flowchart LR
@@ -22,9 +22,9 @@ flowchart LR
         H1[durable parts重写] --> H2[AI SDK转换]
         H2 --> H3[ProviderTransform<br/>provider适配]
     end
-```
 
-&nbsp;
+    M4 & S4 & H3 --> 最终输入[最终模型输入]
+```
 
 OpenCode 的上下文链条如果只看”有哪些 prompt”，很容易低估顺序的重要性。真正的注入顺序大致是：`SessionPrompt.prompt()`（`packages/opencode/src/session/prompt.ts:161-188`）把原始输入落成 part，`SessionPrompt.createUserMessage()`（`packages/opencode/src/session/prompt.ts:965-1355`）先把文件、目录、MCP 资源和 `@agent` 展开成 synthetic text，`SessionPrompt.insertReminders()`（`packages/opencode/src/session/prompt.ts:1357-1495`）再按 plan/build 语义补 reminder，`Plugin.trigger("experimental.chat.messages.transform")`（调用点见 `packages/opencode/src/session/prompt.ts:652`）最后还可以再改写消息数组。到这里，history 本身已经不是用户原始输入了。
 

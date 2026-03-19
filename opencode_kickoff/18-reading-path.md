@@ -1,8 +1,8 @@
 # 建议的源码阅读路径：先打通状态机，再扩展到上下文和扩展点
 
-主向导对应章节：`建议的源码阅读路径`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** IX. 设计哲学
+> **前置阅读** [17-设计价值](./17-why-this-design-matters.md)
+> **后续阅读** [19-最终心智模型](./19-final-mental-model.md)
 
 ```mermaid
 flowchart LR
@@ -10,8 +10,6 @@ flowchart LR
     P2 --> P3["第三站<br/>上下文工程<br/>createUserMessage/LLM/Provider"]
     P3 --> P4["第四站<br/>工具/权限/扩展点<br/>ToolRegistry/Plugin/MCP"]
 ```
-
-&nbsp;
 
 ## 第一站：先读主循环，而不是先读目录树
 

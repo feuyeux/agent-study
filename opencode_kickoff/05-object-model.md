@@ -1,8 +1,8 @@
 # 把对象模型放回执行链里看：Agent、Session、MessageV2、Tool 与交互原语如何协作
 
-主向导对应章节：`把对象模型放回执行链里看`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** IV. 对象模型
+> **前置阅读** [04-session中心化](./04-session-centric-runtime.md)
+> **后续阅读** [06-上下文工程](./06-context-engineering.md) · [13-高级能力](./13-advanced-primitives.md)
 
 ```mermaid
 graph TB
@@ -19,8 +19,6 @@ graph TB
     Process[SessionProcessor] --> MsgV2
     Process --> Tool
 ```
-
-<br/><br/>
 
 OpenCode 的对象模型不是围绕”聊天消息”组织的，而是围绕”执行状态”组织的。只看类型定义会觉得它对象很多；把它们放回主链后，会发现每个对象都在给 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）和 `SessionProcessor.process()`（`packages/opencode/src/session/processor.ts:46-425`）提供一块必要的状态面。
 

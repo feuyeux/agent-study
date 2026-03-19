@@ -1,12 +1,12 @@
 # 观测性为什么这么强：因为主状态本来就是事件化的
 
-主向导对应章节：`观测性为什么这么强`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VIII. 运维与可观测
+> **前置阅读** [12-processor源码解剖](./12-processor-source-walkthrough.md)
+> **后续阅读** [21-错误恢复](./21-error-recovery.md) · [17-设计价值](./17-why-this-design-matters.md)
 
 ```mermaid
 flowchart TB
-    subgraph 写路径 = 事件源
+    subgraph "写路径 = 事件源"
         UM[updateMessage] --> BusPub1[message.updated]
         UP[updatePart] --> BusPub2[message.part.updated]
         UPD[updatePartDelta] --> BusPub3[message.part.delta]
@@ -16,13 +16,11 @@ flowchart TB
     BusPub2 --> Bus
     BusPub3 --> Bus
 
-    Bus --> SSE[/event SSE路由]
+    Bus --> SSE["/event SSE路由"]
     Bus --> Subscribe[Bus.subscribeAll]
     Subscribe --> CLI[CLI渲染]
     Subscribe --> TUI[TUI组件]
 ```
-
-&nbsp;
 
 OpenCode 的可观测性不是后加的 log viewer，而是 `Bus.publish()`（`packages/opencode/src/bus/index.ts:41-64`）贯穿整个持久化写路径的副产物。`Session.updateMessage()`（`packages/opencode/src/session/index.ts:686-706`）在写 message 后发布 `message.updated`，`Session.updatePart()`（`packages/opencode/src/session/index.ts:755-776`）在写 part 后发布 `message.part.updated`，`Session.updatePartDelta()`（`packages/opencode/src/session/index.ts:778-789`）则单独把流式文本和推理增量发布为 `message.part.delta`。`MessageV2.Event`（`packages/opencode/src/session/message-v2.ts:451-489`）把这些事件类型集中定义出来，所以“会话状态”和“可观察事件”从一开始就是同一套模型的两个投影。
 

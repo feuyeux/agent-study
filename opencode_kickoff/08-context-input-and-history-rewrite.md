@@ -1,8 +1,8 @@
 # 上下文工程深拆二：输入预处理、命令展开与 history rewrite 怎样改写模型看到的世界
 
-主向导对应章节：`上下文工程深拆二`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程
+> **前置阅读** [07-system装配链](./07-context-system-and-instructions.md)
+> **后续阅读** [09-注入顺序图](./09-context-injection-order.md)
 
 ```mermaid
 flowchart TB
@@ -10,7 +10,7 @@ flowchart TB
         UM[createUserMessage] --> File[file: part展开]
         UM --> Dir[目录展开]
         UM --> MCP[MCP资源读取]
-        UM --> Agent[@agent触发subtask]
+        UM --> Agent[""@agent触发subtask]
         File --> Synthetic[Synthetic TextPart]
     end
 
@@ -26,8 +26,6 @@ flowchart TB
         ToModel --> Pending[pending tool处理]
     end
 ```
-
-&nbsp;
 
 OpenCode 对输入的第一轮改写发生在 `SessionPrompt.createUserMessage()`（`packages/opencode/src/session/prompt.ts:965-1355`），不是发生在模型调用之前的某个字符串模板里。这个函数把 `PromptInput.parts`（`packages/opencode/src/session/prompt.ts:94-159`）转成真正落盘的 `MessageV2.Part`（`packages/opencode/src/session/message-v2.ts:377-395`），并在这里提前执行了大量“上下文工程”：文件读取、目录展开、MCP 资源读取、`@agent` 触发 subtask hint、媒体内容降级成 synthetic text。
 

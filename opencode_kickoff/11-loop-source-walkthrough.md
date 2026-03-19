@@ -1,9 +1,8 @@
 # loop 源码逐段解剖：主循环怎样把 session 推进成状态机
 
-- [一次请求的完整生命周期：请求如何进入主链](./03-request-lifecycle.md)
-- [loop 与 processor：两层状态机的边界](./10-loop-and-processor.md)
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VI. 状态机双层架构
+> **前置阅读** [10-loop与processor](./10-loop-and-processor.md) · [03-request-lifecycle](./03-request-lifecycle.md)
+> **后续阅读** [12-processor源码解剖](./12-processor-source-walkthrough.md)
 
 ```mermaid
 flowchart TB
@@ -21,8 +20,6 @@ flowchart TB
         Return -->|continue| History
     end
 ```
-
-&nbsp;
 
 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）是 OpenCode 真正的 session orchestrator。它的代码看上去分支很多，但这些分支其实都在回答同一个问题：基于当前 durable history，这条 session 下一步最该执行什么。
 

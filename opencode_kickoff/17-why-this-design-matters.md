@@ -1,8 +1,8 @@
 # 这套设计为什么值得研究：因为复杂度直接对着长任务运行时开刀
 
-主向导对应章节：`这套设计为什么值得研究`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** IX. 设计哲学
+> **前置阅读** [16-观测性](./16-observability.md) · [14-硬编码与可配置](./14-hardcoded-vs-configurable.md)
+> **后续阅读** [18-阅读路径](./18-reading-path.md) · [19-最终心智模型](./19-final-mental-model.md)
 
 ```mermaid
 graph TB
@@ -17,8 +17,6 @@ graph TB
         V3a --> V3b[MCP折叠进<br/>统一工具面]
     end
 ```
-
-&nbsp;
 
 OpenCode 值得研究，不是因为模块多，而是因为它把“长任务 agent 的状态应该放哪儿”这个问题落实到了 `Session.Info`（`packages/opencode/src/session/index.ts:122-164`）、`MessageV2.Part`（`packages/opencode/src/session/message-v2.ts:377-395`）、`Session.updateMessage()`（`packages/opencode/src/session/index.ts:686-706`）和 `Session.updatePart()`（`packages/opencode/src/session/index.ts:755-776`）上。很多系统也能调工具，但工具执行结果、推理流、补丁、压缩、子任务往往只是旁路日志；这里它们直接变成主数据结构，所以 `Session.fork()`（`packages/opencode/src/session/index.ts:239-280`）和 `SessionCompaction.process()`（`packages/opencode/src/session/compaction.ts:102-297`）才能自然成立。
 

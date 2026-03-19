@@ -1,8 +1,8 @@
 # 硬编码与可配置的边界：骨架固定，策略晚绑定
 
-主向导对应章节：`硬编码与可配置的边界`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VII. 高级能力
+> **前置阅读** [13-高级能力](./13-advanced-primitives.md)
+> **后续阅读** [16-观测性](./16-observability.md) · [15-入口差异](./15-client-differences.md)
 
 ```mermaid
 graph TB
@@ -19,8 +19,6 @@ graph TB
         C3[InstructionPrompt.systemPaths<br/>项目/全局/URL指令]
     end
 ```
-
-&nbsp;
 
 OpenCode 的骨架其实非常硬。`SessionPrompt.prompt()`（`packages/opencode/src/session/prompt.ts:161-188`）一定会先写 user message 再进入 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）；主循环一定按 pending `subtask`、pending `compaction`、overflow 检查、normal step 的顺序推进；normal step 一定交给 `SessionProcessor.process()`（`packages/opencode/src/session/processor.ts:46-425`）返回 `continue / compact / stop`。这条 `prompt -> loop -> processor -> durable parts` 的骨架是硬编码的，因为它定义了 runtime 的因果关系，不能随便被配置打散。
 

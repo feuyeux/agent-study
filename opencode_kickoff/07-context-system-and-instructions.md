@@ -1,8 +1,8 @@
 # 上下文工程深拆一：system、provider、environment 与 instruction 是怎样层层叠上去的
 
-主向导对应章节：`上下文工程深拆一`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程
+> **前置阅读** [06-上下文工程总览](./06-context-engineering.md)
+> **后续阅读** [08-输入预处理与历史重写](./08-context-input-and-history-rewrite.md)
 
 ```mermaid
 flowchart TB
@@ -13,8 +13,6 @@ flowchart TB
         Instruction --> PluginTransform[Plugin.trigger<br/>experimental.chat.system.transform]
     end
 ```
-
-&nbsp;
 
 system 在 OpenCode 里不是一个模板文件，而是一条装配链。真正的装配发生在 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:654-664`）和 `LLM.stream()`（`packages/opencode/src/session/llm.ts:68-95`）之间：前者先准备 environment、skills、instruction，后者再把 agent prompt、provider prompt、手工 system 和 user message 自带 system 合并成最终 header。
 

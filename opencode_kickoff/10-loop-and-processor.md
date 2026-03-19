@@ -1,33 +1,35 @@
 # loop 与 processor：OpenCode 把状态机拆成两层之后，代码为什么会稳很多
 
-主向导对应章节：`loop 与 processor`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VI. 状态机双层架构
+> **前置阅读** [03-request-lifecycle](./03-request-lifecycle.md)
+> **后续阅读** [11-loop源码解剖](./11-loop-source-walkthrough.md) · [12-processor源码解剖](./12-processor-source-walkthrough.md)
 
 ```mermaid
-graph TB
-    subgraph SessionPrompt.loop - Session级
+flowchart LR
+    subgraph Session["SessionPrompt.loop<br/>Session级"]
+        direction TB
         L1[并发重入/恢复]
-        L2[pending subtask优先]
+        L2[pending subtask 优先]
         L3[pending compaction]
-        L4[overflow检查]
-        L5[普通轮次]
-        L6[决定continue/compact/stop]
+        L4[overflow 检查]
+        L5{普通轮次?}
+        L6[决定 continue / compact / stop]
+        L1 --> L2 --> L3 --> L4 --> L5 --> L6
     end
 
-    subgraph SessionProcessor.process - 单轮级
-        P1[LLM.stream消费]
-        P2[reasoning/text增量]
+    subgraph Processor["SessionProcessor.process — 单轮级"]
+        direction TB
+        P1[LLM.stream 消费]
+        P2[reasoning / text 增量]
         P3[tool lifecycle]
-        P4[step/patch边界]
-        P5[错误/重试]
+        P4[step / patch 边界]
+        P5[错误 / 重试]
+        P1 --> P2 --> P3 --> P4 --> P5
     end
 
-    L5 -->|system/messages/tools| P1
-    P1 -->|continue/compact/stop| L6
+    L5 -->|"system + messages + tools"| P1
+    P5 -->|"continue / compact / stop"| L6
 ```
-
-&nbsp;
 
 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）和 `SessionProcessor.process()`（`packages/opencode/src/session/processor.ts:46-425`）是同一台状态机的两层，但二者的时间尺度完全不同。前者处理 session 级问题：并发重入、历史恢复、pending task 优先级、何时需要 compaction、何时该停机。后者处理单轮级问题：provider 流事件、tool lifecycle、reasoning/text 增量、patch、retry 和 blocked。
 

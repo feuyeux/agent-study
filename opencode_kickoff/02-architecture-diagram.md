@@ -1,29 +1,29 @@
 # 架构总图怎么读：把目录树翻译成调用骨架，而不是模块清单
 
-主向导对应章节：`架构总图`
-
-&nbsp;
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** I. 入口与架构
+> **前置阅读** [01-runtime-host](./01-runtime-host.md)
+> **后续阅读** [03-request-lifecycle](./03-request-lifecycle.md)
 
 ```mermaid
 graph TB
-    subgraph 第一层：入口
+    subgraph 第一层-入口
         CLI[CLI RunCommand.handler] --> ServerApp[Server.createApp]
         ServerApp --> Routes[SessionRoutes]
     end
 
-    subgraph 第二层：Runtime核心
+    subgraph 第二层-Runtime核心
         Routes --> Loop[SessionPrompt.loop]
         Loop --> Process[SessionProcessor.process]
         Loop --> Compact[SessionCompaction]
     end
 
-    subgraph 第三层：状态层
+    subgraph 第三层-状态层
         Process --> MsgV2[MessageV2.Part]
         Compact --> MsgV2
         MsgV2 --> Session[(Session.Info)]
     end
 
-    subgraph 第四层：横切能力
+    subgraph 第四层-横切能力
         Process --> Tools[ToolRegistry.tools]
         Process --> Perm[PermissionNext.ask]
         Process --> Quest[Question.ask]
@@ -31,8 +31,6 @@ graph TB
         Process --> Bus[Bus.publish]
     end
 ```
-
-<br/><br/>
 
 这套代码最适合画成四层，但这四层不是”项目目录的四个文件夹”，而是四段不同职责的调用骨架。
 
