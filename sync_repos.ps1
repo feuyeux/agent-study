@@ -30,10 +30,16 @@ foreach ($repoUrl in $repos) {
     if (Test-Path $repoPath) {
         Write-Host "`n=== 更新 $repoName ===" -ForegroundColor Cyan
         Push-Location $repoPath
-        if ($useGh) {
-            gh repo sync
-        } else {
-            git pull
+        git fetch origin --quiet
+        # 获取远程默认分支名
+        $remoteDefault = git remote show origin | Select-String "HEAD branch" | ForEach-Object { ($_ -replace ".*:\s*", "").Trim() }
+        if ($remoteDefault) {
+            git checkout --force $remoteDefault 2>$null
+            git reset --hard "origin/$remoteDefault"
+            git clean -fdx -e "!.gitkeep" 2>$null
+            if ($useGh) {
+                gh repo sync -b $remoteDefault --force
+            }
         }
         $exitCode = $LASTEXITCODE
         Pop-Location
@@ -42,11 +48,7 @@ foreach ($repoUrl in $repos) {
         }
     } else {
         Write-Host "`n=== 克隆 $repoName ===" -ForegroundColor Cyan
-        if ($useGh) {
-            git clone $repoUrl $repoPath
-        } else {
-            git clone $repoUrl $repoPath
-        }
+        git clone $repoUrl $repoPath
         $exitCode = $LASTEXITCODE
         if ($exitCode -ne 0) {
             Write-Host "克隆失败: $repoName" -ForegroundColor Red

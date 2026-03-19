@@ -32,10 +32,16 @@ for repo_url in "${repos[@]}"; do
         echo ""
         echo "=== 更新 $repo_name ==="
         cd "$repo_path"
-        if [ "$use_gh" = true ]; then
-            gh repo sync
-        else
-            git pull
+        git fetch origin --quiet
+        # 获取远程默认分支名
+        remote_default=$(git remote show origin 2>/dev/null | grep "HEAD branch" | sed 's/.*: //')
+        if [ -n "$remote_default" ]; then
+            git checkout --force "$remote_default" 2>/dev/null
+            git reset --hard "origin/$remote_default"
+            git clean -fdx -e "!/.gitkeep" 2>/dev/null
+            if [ "$use_gh" = true ]; then
+                gh repo sync -b "$remote_default" --force
+            fi
         fi
     else
         echo ""
