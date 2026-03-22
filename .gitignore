@@ -2,6 +2,7 @@
 *.txt
 *.ps1
 *.sh
+.DS_Store
 .claude
 claude-code/
 codex/

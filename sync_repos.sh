@@ -3,16 +3,18 @@
 # 如果仓库不存在就clone，否则pull
 # 优先使用gh命令，没有则使用git
 
+failed_clones=()
+
 repos=(
-    "git@github.com:anthropics/codex.git"
-    "git@github.com:anthropics/openclaw.git"
-    "git@github.com:anthropics/gemini-cli.git"
-    "git@github.com:anthropics/opencode.git"
-    "git@github.com:anthropics/zeroclaw.git"
-    "git@github.com:anthropics/claude-code.git"
+    "https://github.com/openai/codex.git"
+    "https://github.com/anomalyco/opencode.git"
+    "https://github.com/openclaw/openclaw.git"
+    "https://github.com/google-gemini/gemini-cli.git"
+    "https://github.com/anthropics/claude-code.git"
+    "https://github.com/zeroclaw-labs/zeroclaw.git"
 )
 
-base_dir="$HOME/coding/agent"
+base_dir="$(pwd)"
 
 # 检查gh是否可用
 if command -v gh &> /dev/null; then
@@ -46,9 +48,25 @@ for repo_url in "${repos[@]}"; do
     else
         echo ""
         echo "=== 克隆 $repo_name ==="
-        git clone "$repo_url" "$repo_path"
+        if ! git clone "$repo_url" "$repo_path" 2>&1; then
+            echo "✗ 克隆失败: $repo_url"
+            echo "  可能原因:"
+            echo "    - 网络连接问题"
+            echo "    - 仓库地址错误或仓库不存在"
+            echo "    - 没有访问该仓库的权限"
+            failed_clones+=("$repo_url")
+        else
+            echo "✓ 克隆成功: $repo_name"
+        fi
     fi
 done
 
 echo ""
-echo "完成!"
+if [ ${#failed_clones[@]} -eq 0 ]; then
+    echo "✓ 所有仓库同步完成!"
+else
+    echo "✗ 有 ${#failed_clones[@]} 个仓库克隆失败:"
+    for repo in "${failed_clones[@]}"; do
+        echo "  - $repo"
+    done
+fi
