@@ -78,75 +78,127 @@ graph TB
 
 ### 第一层：宿主与入口层
 
-这一层只回答三件事：请求从哪里来、挂到哪个 workspace/directory、落到哪条 session 上。  
-这一层说明 `Server.createApp()`、`WorkspaceContext.provide()`、`Instance.provide()` 和 `SessionRoutes` 怎样把一次外部请求绑定到同一个实例上下文里。CLI、TUI、Web 在这里提供不同入口，agent 主循环随后才开始。
+这一层的职责只有一个：**把外部请求挂到正确的实例上下文和 session 上。**
 
-从运行位置来看，这一层和第二层共同组成了 OpenCode 的宿主面。第一层负责挂载入口与实例上下文，第二层负责推进 session；二者一起把外部请求转换成可持续推进的 runtime 执行。
+- `Server.createApp()`（`server/server.ts`）是统一宿主入口，建立 Hono 路由应用。
+- `WorkspaceContext.provide()`（`control-plane/workspace-context.ts`）与 `Instance.provide()`（`server/server.ts`）把 workspace、directory、插件和项目上下文灌进去。
+- `SessionRoutes`（`server/routes/session.ts`）把 HTTP / CLI / TUI 的外部操作统一翻译成 session runtime 操作。
+- `RunCommand.handler()`（`cli/cmd/run.ts`）是 CLI 入口：创建/选择 session、订阅事件。
+
+CLI、TUI、Web 在这里提供不同入口，但最终都汇入同一条 `SessionRoutes → SessionPrompt` 的主线。读完这一层，你应该能说明入口怎样绑定实例上下文，以及不同入口为什么会带来不同初始条件。
 
 ### 第二层：Runtime 编排层
 
-这一层负责“推进执行”。`SessionPrompt.prompt()` 先把输入落盘，`createUserMessage()` 做输入预处理，`SessionPrompt.loop()` 决定当前 session 先跑 subtask、compaction 还是普通轮次，`SessionProcessor.process()` 再把一次模型流写回 durable parts。  
-如果只想抓 OpenCode 的主时钟，核心就是这一层。
+这一层负责"真正推进执行"，是 OpenCode 的主时钟。
+
+- `SessionPrompt.prompt()`（`session/prompt.ts`）把一次外部输入转成 runtime 里的正式动作：清理回滚、落盘用户输入。
+- `SessionPrompt.createUserMessage()`（`session/prompt.ts`）在写入前完成输入预处理：文件、目录、MCP、agent mention 展开。
+- `SessionPrompt.insertReminders()`（`session/prompt.ts`）注入 plan/build 语义提示。
+- `SessionPrompt.loop()`（`session/prompt.ts`）做 session 级调度：优先消费 pending subtask / compaction，再进入普通轮次。
+- `SessionProcessor.process()`（`session/processor.ts`）做单轮执行：消费 LLM 流、写 durable parts。
+- `LLM.stream()`（`session/llm.ts`）提供访问 provider 的统一接口：合并 model / system / messages。
+
+读完这一层，你应该能画出 `prompt → loop → process → continue/compact/stop` 的主时钟。
 
 ### 第三层：Durable 状态层
 
-这一层负责“什么才算真相”。`Session.Info` 定义执行边界，`MessageV2.Part` 定义最小状态单元，`updateMessage()` / `updatePart()` 是统一写路径，SQLite 和文件系统保存长期状态。  
-resume、fork、share、revert、summary 这些能力都建立在这一层之上。
+这一层负责"什么才算被执行过"，是 OpenCode 的真相源。
+
+- `Session.Info`（`session/index.ts`）定义执行边界：directory / workspace / permission / revert / summary / share。
+- `MessageV2.Part`（`session/message-v2.ts`）定义最小状态单元：text / tool / reasoning / step / patch / subtask / compaction。
+- `Session.updateMessage()`（`session/index.ts`）是 message 级写路径。
+- `Session.updatePart()`（`session/index.ts`）是 part 级写路径。
+- `Session.fork()`（`session/index.ts`）复制会话边界与历史，重建执行轨迹。
+- SQLite + 文件系统保存长期状态，summary / fork / share / revert 都建立在这一层之上。
+
+读完这一层，你应该能回答：OpenCode 为什么可以 resume、fork、share，为什么工具输出和普通文本能共存在同一条历史里。
 
 ### 第四层：横切能力层
 
-这一层不单独驱动主循环，但会在固定插槽里介入主链。工具、权限确认、问题澄清、插件、MCP、subagent、compaction、structured output、事件总线和错误恢复都在这里。  
-它们看起来很多样，但最后都要么改写 durable history，要么消费 durable history 发事件。
+这一层负责"哪些能力在主链的固定插槽里介入"。不单独驱动主循环，但会在固定节点接入。
+
+- `Tool.define()` / `Tool.Context`（`tool/tool.ts`）提供统一工具协议。
+- `ToolRegistry.tools()`（`tool/registry.ts`）负责工具装配与过滤。
+- `PermissionNext.ask()`（`permission/index.ts`）与 `Question.ask()`（`question/index.ts`）提供用户介入原语。
+- `Plugin.trigger()`（`plugin/index.ts`）与 `MCP.tools()`（`mcp/index.ts`）折叠扩展能力。
+- `SessionCompaction.process()`（`session/compaction.ts`）、subagent、structured output 把高级能力接回主链。
+- `Bus.publish()`（`bus/index.ts`）与 SSE 把 durable 写操作投影成实时事件。
+- retry / revert / overflow compaction 提供恢复路径。
+
+读完这一层，你应该能回答：为什么 OpenCode 能做这么多事，但仍然没有长出第二套状态系统。
 
 ---
 
-## 三、再看层内展开
+## 三、先记最短主线，再区分主线文档和侧面展开
 
-四层讲全以后，再把每层内部拆开读，整个目录就不会散。
+`03` 以后最容易乱，是因为“主线代码流”和“侧面概念文档”混在一起了。  
+总纲里应该先把 **最短主线** 讲完，再告诉你哪些文档是在继续追代码，哪些是在回头解释 durable state、对象模型、上下文工程或横切能力。
 
-### 3.1 第一层：宿主与入口层
+### 3.1 最短主线
 
-| 文档 | 这一层回答什么 |
-|------|----------------|
-| **[01-user-entry](./01-user-entry.md)** | 从 CLI / TUI / Web 入口看请求怎样进入统一 runtime |
-| **[02-architecture-diagram](./02-architecture-diagram.md)** | 四层骨架里每层各放哪些模块 |
+如果只记一条调用骨架，先记这个：
 
-### 3.2 第二层：Runtime 编排层
+```text
+入口
+  -> Server / SessionRoutes
+  -> SessionPrompt.prompt()
+  -> createUserMessage()
+  -> SessionPrompt.loop()
+  -> SessionProcessor.process()
+  -> updateMessage / updatePart
+  -> Bus.publish / SSE
+```
 
-| 文档 | 这一层回答什么 |
-|------|----------------|
-| **[03-request-lifecycle](./03-request-lifecycle.md)** | 一次请求怎样穿过四层，尤其怎样进入 runtime 主链 |
-| **[06-context-engineering](./06-context-engineering.md)** | 上下文怎样在 runtime 编排过程中逐层装配 |
-| [07-context-system-and-instructions](./07-context-system-and-instructions.md) | system / environment / instruction 如何叠加 |
-| [08-context-input-and-history-rewrite](./08-context-input-and-history-rewrite.md) | 输入预处理、附件展开、history rewrite |
-| [09-context-injection-order](./09-context-injection-order.md) | 注入顺序为什么会改变约束力 |
+这条链里：
+
+- `01` 和 `02` 负责把请求送到 `SessionRoutes`
+- `03` 开始正式进入 `prompt()` / `loop()` 代码
+- `10`、`11`、`12` 继续把 `loop` 和 `processor` 拆开
+- `04`、`05`、`06` 更适合当 **侧面展开**，而不是冒充主线续篇
+
+### 3.2 主线文档：按 runtime 代码流往里追
+
+| 文档 | 回答什么 |
+|------|----------|
+| **[01-user-entry](./01-user-entry.md)** | CLI / TUI / Web / Serve / ACP / Desktop 六种入口怎样到达 Server |
+| **[02-server-and-routing](./02-server-and-routing.md)** | Server 启动、Hono 中间件链、路由分发、实例上下文绑定 |
+| **[03-request-lifecycle](./03-request-lifecycle.md)** | 从 `SessionRoutes` 正式进入 `SessionPrompt.prompt()` 与 `SessionPrompt.loop()` |
 | **[10-loop-and-processor](./10-loop-and-processor.md)** | loop 与 processor 为什么必须拆两层 |
 | [11-loop-source-walkthrough](./11-loop-source-walkthrough.md) | loop 源码逐段解剖 |
 | [12-processor-source-walkthrough](./12-processor-source-walkthrough.md) | processor 源码逐段解剖 |
 
-### 3.3 第三层：Durable 状态层
+### 3.3 侧面展开：durable state 与对象模型
 
-| 文档 | 这一层回答什么 |
-|------|----------------|
-| **[04-session-centric-runtime](./04-session-centric-runtime.md)** | session 作为执行边界承载哪些运行时语义 |
-| **[05-object-model](./05-object-model.md)** | Session / MessageV2 / Agent / Tool 怎样围绕状态协作 |
-| **[20-storage-and-persistence](./20-storage-and-persistence.md)** | durable state 最终落在哪里 |
+| 文档 | 回答什么 |
+|------|----------|
+| **[04-session-centric-runtime](./04-session-centric-runtime.md)** | 从主线回头看 session 为什么是执行边界 |
+| **[05-object-model](./05-object-model.md)** | Agent / Session / MessageV2 / Tool 怎样支撑主线运行 |
+| **[20-storage-and-persistence](./20-storage-and-persistence.md)** | SQLite / Drizzle / 写路径 / 表结构 |
 
-### 3.4 第四层：横切能力层
+### 3.4 侧面展开：上下文工程
 
-| 文档 | 这一层回答什么 |
-|------|----------------|
+| 文档 | 回答什么 |
+|------|----------|
+| **[06-context-engineering](./06-context-engineering.md)** | 上下文怎样在 loop 的多个阶段被装配出来 |
+| [07-context-system-and-instructions](./07-context-system-and-instructions.md) | system / environment / instruction 如何叠加 |
+| [08-context-input-and-history-rewrite](./08-context-input-and-history-rewrite.md) | 输入预处理、附件展开、history rewrite |
+| [09-context-injection-order](./09-context-injection-order.md) | 注入顺序为什么会改变约束力 |
+
+### 3.5 侧面展开：横切能力
+
+| 文档 | 回答什么 |
+|------|----------|
 | **[13-advanced-primitives](./13-advanced-primitives.md)** | subagent / compaction / structured output 怎样接回主链 |
 | **[14-hardcoded-vs-configurable](./14-hardcoded-vs-configurable.md)** | 哪些骨架固定，哪些策略可插拔 |
 | **[16-observability](./16-observability.md)** | 为什么写路径天然能变成事件源 |
 | **[21-error-recovery](./21-error-recovery.md)** | retry / revert / overflow compaction 如何恢复执行 |
 
-### 3.5 读完全套后的收束文档
+### 3.6 收束文档
 
 | 文档 | 用途 |
 |------|------|
 | [17-why-this-design-matters](./17-why-this-design-matters.md) | 回看这套设计到底值不值得学 |
-| [18-reading-path](./18-reading-path.md) | 按层安排阅读顺序 |
+| [18-reading-path](./18-reading-path.md) | 明确主线阅读和侧面展开的顺序 |
 | [19-final-mental-model](./19-final-mental-model.md) | 用一张最终图把四层收束成一个闭环 |
 
 ---
@@ -213,18 +265,19 @@ resume、fork、share、revert、summary 这些能力都建立在这一层之上
 
 ## 六、推荐阅读顺序
 
-### 第一轮：先按层打通骨架
+### 第一轮：只追主线代码流
 
-1. 读 [01-user-entry](./01-user-entry.md) 和 [02-architecture-diagram](./02-architecture-diagram.md)，把入口层和四层骨架先立住。
-2. 读 [03-request-lifecycle](./03-request-lifecycle.md)，看一条请求怎样顺着四层走完。
-3. 读 [04-session-centric-runtime](./04-session-centric-runtime.md) 和 [05-object-model](./05-object-model.md)，确认 durable state 到底长什么样。
-4. 读 [10-loop-and-processor](./10-loop-and-processor.md)，把 runtime 主时钟彻底看懂。
+1. 读 [01-user-entry](./01-user-entry.md)，搞清楚六种入口怎样到达 Server。
+2. 读 [02-server-and-routing](./02-server-and-routing.md)，看 Server 内部怎样把请求送到 `SessionRoutes`。
+3. 读 [03-request-lifecycle](./03-request-lifecycle.md)，从 `SessionRoutes` 正式进入 `prompt()` 和 `loop()`。
+4. 读 [10-loop-and-processor](./10-loop-and-processor.md)，看 `loop` 和 `processor` 为什么要拆两层。
+5. 读 [11-loop-source-walkthrough](./11-loop-source-walkthrough.md) 和 [12-processor-source-walkthrough](./12-processor-source-walkthrough.md)，把第二层主时钟按源码吃透。
 
-### 第二轮：按层内专题展开
+### 第二轮：回头补侧面展开
 
-1. 第二层优先展开：[06](./06-context-engineering.md) → [07](./07-context-system-and-instructions.md) → [08](./08-context-input-and-history-rewrite.md) → [09](./09-context-injection-order.md) → [11](./11-loop-source-walkthrough.md) → [12](./12-processor-source-walkthrough.md)
-2. 第三层优先展开：[20-storage-and-persistence](./20-storage-and-persistence.md)
-3. 第四层优先展开：[13](./13-advanced-primitives.md) → [14](./14-hardcoded-vs-configurable.md) → [16](./16-observability.md) → [21](./21-error-recovery.md)
+1. durable state 与对象模型：[04](./04-session-centric-runtime.md) → [05](./05-object-model.md) → [20](./20-storage-and-persistence.md)
+2. 上下文工程：[06](./06-context-engineering.md) → [07](./07-context-system-and-instructions.md) → [08](./08-context-input-and-history-rewrite.md) → [09](./09-context-injection-order.md)
+3. 横切能力：[13](./13-advanced-primitives.md) → [14](./14-hardcoded-vs-configurable.md) → [16](./16-observability.md) → [21](./21-error-recovery.md)
 4. 最后收束：[17](./17-why-this-design-matters.md) → [18](./18-reading-path.md) → [19](./19-final-mental-model.md)
 
 ---

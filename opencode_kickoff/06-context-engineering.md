@@ -1,8 +1,10 @@
-# 上下文工程并不只发生在 system prompt：OpenCode 在多个阶段共同塑造模型视角
+# 侧面展开：上下文工程并不只发生在 system prompt，OpenCode 在多个阶段共同塑造模型视角
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程 · **分层定位** 第二层：Runtime 编排层
-> **前置阅读** [05-对象模型](./05-object-model.md)
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程 · **分层定位** 第二层：Runtime 编排层 · **阅读角色** 侧面展开
+> **前置阅读** [10-loop-and-processor](./10-loop-and-processor.md) · [05-对象模型](./05-object-model.md)
 > **后续阅读** [07-system装配链](./07-context-system-and-instructions.md) · [08-输入预处理](./08-context-input-and-history-rewrite.md) · [09-注入顺序](./09-context-injection-order.md)
+
+这一篇适合放在主线 `03 -> 10 -> 11 -> 12` 之后补读，因为它解释的是：**loop 普通轮次装配 system/messages/tools 时，上下文到底是在几个阶段里被塑造出来的。**
 
 ```mermaid
 flowchart TB

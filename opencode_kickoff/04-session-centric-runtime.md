@@ -1,8 +1,10 @@
-# 为什么 session 才是中心：源码里它定义的是执行边界，而不是聊天容器
+# 侧面回看：为什么 session 才是中心，源码里它定义的是执行边界而不是聊天容器
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** III. Session 与状态模型 · **分层定位** 第三层：Durable 状态层
-> **前置阅读** [03-request-lifecycle](./03-request-lifecycle.md)
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** III. Session 与状态模型 · **分层定位** 第三层：Durable 状态层 · **阅读角色** 侧面展开
+> **前置阅读** [03-request-lifecycle](./03-request-lifecycle.md) · [10-loop-and-processor](./10-loop-and-processor.md)
 > **后续阅读** [05-对象模型](./05-object-model.md) · [20-持久化与存储](./20-storage-and-persistence.md)
+
+这一篇不是 `02 -> 03 -> loop` 主线的直接续篇，而是从主线回头看：**为什么 `loop()`、`processor()`、`tool` 和恢复语义都要围绕 session 边界组织。**
 
 ```mermaid
 graph TB

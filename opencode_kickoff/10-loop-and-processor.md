@@ -1,4 +1,4 @@
-# loop 与 processor：OpenCode 把状态机拆成两层之后，代码为什么会稳很多
+# loop 与 processor：03 之后主线为什么必须继续拆成这两层
 
 > **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VI. 状态机双层架构 · **分层定位** 第二层：Runtime 编排层
 > **前置阅读** [03-request-lifecycle](./03-request-lifecycle.md)

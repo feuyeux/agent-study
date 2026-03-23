@@ -1,34 +1,38 @@
-# 建议的源码阅读路径：先按四层读通，再在每层里纵深展开
+# 建议的源码阅读路径：先追主线代码流，再回头补侧面展开
 
 > **总纲** [00-opencode_ko](./00-opencode_ko.md) · **分层定位** 元阅读文档  
 > **前置阅读** [17-why-this-design-matters](./17-why-this-design-matters.md)  
 > **后续阅读** [19-final-mental-model](./19-final-mental-model.md)
 
-现在这套 kickoff 不再建议“按能力域横着读”，而是建议先按四层把主骨架读通。这样做的好处是：你会先知道每段代码在整条主链里扮演什么角色，再去看细节时不容易迷路。
+现在这套 kickoff 最容易让人迷路的点，是把“主线代码流”和“侧面概念文档”混在了一起。  
+更稳的读法是：
+
+1. 先追 **主线代码流**，一路从入口读到 `prompt() -> loop() -> processor()`
+2. 再回头补 **侧面展开**，理解 durable state、对象模型、上下文工程和横切能力
 
 ```mermaid
 flowchart LR
-    P1["第一站<br/>第一层：宿主与入口"] --> P2["第二站<br/>第二层：Runtime 编排"]
-    P2 --> P3["第三站<br/>第三层：Durable 状态"]
-    P3 --> P4["第四站<br/>第四层：横切能力"]
-    P4 --> P5["第五站<br/>回看设计价值与最终心智模型"]
+    P1["第一站<br/>入口与 Server"] --> P2["第二站<br/>prompt / loop / processor 主线"]
+    P2 --> P3["第三站<br/>durable state / 对象模型 / 上下文工程"]
+    P3 --> P4["第四站<br/>横切能力与恢复"]
+    P4 --> P5["第五站<br/>设计价值与最终心智模型"]
 ```
 
-## 第一站：先把第一层立住
+## 第一站：先把入口与 Server 立住
 
 先读：
 
 1. [01-user-entry](./01-user-entry.md)
-2. [02-architecture-diagram](./02-architecture-diagram.md)
+2. [02-server-and-routing](./02-server-and-routing.md)
 
 这一站只解决两个问题：
 
-1. 请求到底是怎样挂到实例上下文和 session 上的。
-2. 为什么不同入口共享主循环，却仍然可能表现不同。
+1. 六种入口怎样到达 Server（内嵌 fetch / RPC worker / HTTP / sidecar）。
+2. Server 内部怎样通过 Hono 中间件和路由把请求绑定到实例上下文，最终到达 SessionRoutes。
 
 如果这一步没读清楚，后面很容易把 CLI 或 TUI 误认成宿主本体。
 
-## 第二站：再打通第二层主时钟
+## 第二站：直接打通主线代码流
 
 接着读：
 
@@ -37,30 +41,30 @@ flowchart LR
 3. [11-loop-source-walkthrough](./11-loop-source-walkthrough.md)
 4. [12-processor-source-walkthrough](./12-processor-source-walkthrough.md)
 
-补充展开：
-
-1. [06-context-engineering](./06-context-engineering.md)
-2. [07-context-system-and-instructions](./07-context-system-and-instructions.md)
-3. [08-context-input-and-history-rewrite](./08-context-input-and-history-rewrite.md)
-4. [09-context-injection-order](./09-context-injection-order.md)
-
 读完这一站，你应该能自己画出 `prompt -> loop -> process` 的时钟，并说明上下文工程发生在哪些节点。
 
-## 第三站：回到第三层，看真相源到底长什么样
+## 第三站：回头补侧面展开
+
+这一站不再继续“推进主线”，而是解释主线背后依赖的状态与装配结构。
 
 然后读：
 
 1. [04-session-centric-runtime](./04-session-centric-runtime.md)
 2. [05-object-model](./05-object-model.md)
-3. [20-storage-and-persistence](./20-storage-and-persistence.md)
+3. [06-context-engineering](./06-context-engineering.md)
+4. [07-context-system-and-instructions](./07-context-system-and-instructions.md)
+5. [08-context-input-and-history-rewrite](./08-context-input-and-history-rewrite.md)
+6. [09-context-injection-order](./09-context-injection-order.md)
+7. [20-storage-and-persistence](./20-storage-and-persistence.md)
 
 这一站的关键收获应该是：
 
 1. session 承载执行边界。
 2. part 是最小状态单元。
-3. resume、fork、share、summary、revert 都建立在 durable history 之上。
+3. loop 普通轮次装配 system/messages/tools 时，上下文到底怎样被塑造。
+4. resume、fork、share、summary、revert 都建立在 durable history 之上。
 
-## 第四站：最后吸收第四层横切能力
+## 第四站：最后吸收横切能力与恢复语义
 
 最后读：
 
