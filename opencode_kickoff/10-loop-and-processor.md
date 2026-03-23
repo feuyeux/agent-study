@@ -1,6 +1,6 @@
 # loop 与 processor：OpenCode 把状态机拆成两层之后，代码为什么会稳很多
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VI. 状态机双层架构
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VI. 状态机双层架构 · **分层定位** 第二层：Runtime 编排层
 > **前置阅读** [03-request-lifecycle](./03-request-lifecycle.md)
 > **后续阅读** [11-loop源码解剖](./11-loop-source-walkthrough.md) · [12-processor源码解剖](./12-processor-source-walkthrough.md)
 

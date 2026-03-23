@@ -1,53 +1,151 @@
-# 架构总图怎么读：把目录树翻译成调用骨架，而不是模块清单
+# 按四层读架构总图：先看骨架，再在每层里展开模块
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** I. 入口与架构
-> **前置阅读** [01-runtime-host](./01-runtime-host.md)
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **分层定位** 四层骨架总览  
+> **前置阅读** [01-user-entry](./01-user-entry.md)  
 > **后续阅读** [03-request-lifecycle](./03-request-lifecycle.md)
+
+这一篇不再把目录树当模块清单来背，而是把 OpenCode 压成一张四层架构图。**先认层，再认层内模块，最后再认每层对应的深拆文档。**
 
 ```mermaid
 graph TB
-    subgraph 第一层-入口
-        CLI[CLI RunCommand.handler] --> ServerApp[Server.createApp]
-        ServerApp --> Routes[SessionRoutes]
+    subgraph L1["第一层：宿主与入口层"]
+        CLI[CLI / TUI / Web]
+        Server[Server.createApp]
+        Workspace[WorkspaceContext]
+        Instance[Instance.provide]
+        Routes[SessionRoutes]
     end
 
-    subgraph 第二层-Runtime核心
-        Routes --> Loop[SessionPrompt.loop]
-        Loop --> Process[SessionProcessor.process]
-        Loop --> Compact[SessionCompaction]
+    subgraph L2["第二层：Runtime 编排层"]
+        Prompt[SessionPrompt.prompt]
+        UserMsg[createUserMessage]
+        Loop[SessionPrompt.loop]
+        Reminder[insertReminders]
+        Process[SessionProcessor.process]
+        LLM[LLM.stream]
     end
 
-    subgraph 第三层-状态层
-        Process --> MsgV2[MessageV2.Part]
-        Compact --> MsgV2
-        MsgV2 --> Session[(Session.Info)]
+    subgraph L3["第三层：Durable 状态层"]
+        Session[Session.Info]
+        Part[MessageV2.Part]
+        Write[updateMessage / updatePart]
+        Store[(SQLite + 文件系统)]
     end
 
-    subgraph 第四层-横切能力
-        Process --> Tools[ToolRegistry.tools]
-        Process --> Perm[PermissionNext.ask]
-        Process --> Quest[Question.ask]
-        Process --> Plugin[Plugin.trigger]
-        Process --> Bus[Bus.publish]
+    subgraph L4["第四层：横切能力层"]
+        Tool[ToolRegistry / Tool.Context]
+        Perm[PermissionNext]
+        Q[Question]
+        Plugin[Plugin / MCP]
+        Adv[Subagent / Compaction / Structured Output]
+        Bus[Bus.publish / SSE]
+        Recover[Retry / Revert]
     end
+
+    CLI --> Server
+    Server --> Workspace
+    Workspace --> Instance
+    Instance --> Routes
+    Routes --> Prompt
+    Prompt --> UserMsg
+    Prompt --> Loop
+    Loop --> Reminder
+    Loop --> Process
+    Process --> LLM
+    Prompt --> Part
+    Process --> Part
+    Loop --> Session
+    Part --> Write
+    Write --> Store
+    Loop --> Tool
+    Process --> Tool
+    Tool --> Perm
+    Tool --> Q
+    Process --> Plugin
+    Loop --> Adv
+    Write --> Bus
+    Loop --> Recover
+    Recover --> Write
 ```
 
-这套代码最适合画成四层，但这四层不是”项目目录的四个文件夹”，而是四段不同职责的调用骨架。
+## 第一层：宿主与入口层
 
-## 第一层：入口负责把请求绑定到实例上下文
+这一层的职责只有一个：**把外部请求挂到正确的实例上下文和 session 上。**
 
-CLI 入口 `RunCommand.handler()`（`packages/opencode/src/cli/cmd/run.ts:306-672`）负责组装消息、创建或选择 session、订阅事件；服务端入口 `Server.createApp()`（`packages/opencode/src/server/server.ts:58-575`）负责解析 `directory/workspace` 并通过 `Instance.provide()` 建立实例上下文（`packages/opencode/src/server/server.ts:195-221`）。两者都不直接实现 agent 主逻辑，它们做的是“把一次外部请求挂到哪条 session 上、在哪个目录里执行”。
+- `Server.createApp()`（`packages/opencode/src/server/server.ts:58-575`）是统一宿主入口。
+- `WorkspaceContext.provide()` 与 `Instance.provide()`（调用点见 `packages/opencode/src/server/server.ts:195-221`）把 workspace、directory、插件和项目上下文灌进去。
+- `SessionRoutes`（`packages/opencode/src/server/routes/session.ts:25-1023`）把 HTTP / CLI / TUI 的外部操作统一翻译成 session runtime 操作。
 
-## 第二层：runtime 核心负责推进 session
+这一层读完后，你应该能说明入口怎样绑定实例上下文，以及不同入口为什么会带来不同初始条件。
 
-真正的主链从 `SessionRoutes`（`packages/opencode/src/server/routes/session.ts:25-1023`）进入 `SessionPrompt.prompt()`（`packages/opencode/src/session/prompt.ts:161-188`），再进入 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）和 `SessionProcessor.process()`（`packages/opencode/src/session/processor.ts:46-425`）。`SessionPrompt.loop()` 决定 session 该走 subtask、compaction 还是 normal step；`SessionProcessor.process()` 把 normal step 的 provider 流写成 durable parts；`LLM.stream()`（`packages/opencode/src/session/llm.ts:47-257`）和 `ToolRegistry.tools()`（`packages/opencode/src/tool/registry.ts:132-173`）只是这条主链上的资源提供者。
+继续展开时读：
 
-## 第三层：状态层负责让执行轨迹成为真相源
+- [01-user-entry](./01-user-entry.md)
 
-`Session.Info`（`packages/opencode/src/session/index.ts:122-164`）定义 session 边界，`MessageV2.Part`（`packages/opencode/src/session/message-v2.ts:377-395`）定义最小执行单元，`Session.updateMessage()`（`packages/opencode/src/session/index.ts:686-706`）和 `Session.updatePart()`（`packages/opencode/src/session/index.ts:755-776`）则把所有副作用写回数据库与事件流。`SessionSummary.summarize()`（`packages/opencode/src/session/summary.ts:70-82`）和 `SessionCompaction.prune()`（`packages/opencode/src/session/compaction.ts:59-100`）都建立在这条轨迹之上，而不是另起状态系统。
+## 第二层：Runtime 编排层
 
-## 第四层：横切能力在固定插槽里介入
+这一层负责“真正推进执行”。
 
-`PermissionNext.ask()`（`packages/opencode/src/permission/index.ts:148-182`）和 `Question.ask()`（`packages/opencode/src/question/index.ts:109-133`）把用户介入接进工具执行路径；`Plugin.trigger()`（`packages/opencode/src/plugin/index.ts:112-127`）把 system、messages、params、headers、tool definition 和 tool execution 的可变性集中在少数钩子上；`MCP.tools()`（`packages/opencode/src/mcp/index.ts:609-649`）把外部服务器暴露的工具折叠回统一能力面；`Bus.publish()`（`packages/opencode/src/bus/index.ts:41-64`）把所有状态写操作投影成事件。
+- `SessionPrompt.prompt()`（`packages/opencode/src/session/prompt.ts:161-188`）把一次外部输入转成 runtime 里的正式动作。
+- `SessionPrompt.createUserMessage()`（`packages/opencode/src/session/prompt.ts:965-1355`）在写入前完成输入预处理。
+- `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）做 session 级调度。
+- `SessionProcessor.process()`（`packages/opencode/src/session/processor.ts:46-425`）做单轮执行。
+- `LLM.stream()`（`packages/opencode/src/session/llm.ts:47-257`）提供第二层访问 provider 的统一接口。
 
-所以这张“架构图”的真正读法是：入口只负责挂载上下文，runtime 核心负责推进状态，状态层负责持久化执行轨迹，横切能力则在固定插槽里介入。只要这四层分清楚，目录再大也不会散。
+这一层读完后，你应该能画出 `prompt -> loop -> process -> continue/compact/stop` 的主时钟。
+
+继续展开时读：
+
+- [03-request-lifecycle](./03-request-lifecycle.md)
+- [06-context-engineering](./06-context-engineering.md)
+- [10-loop-and-processor](./10-loop-and-processor.md)
+- [11-loop-source-walkthrough](./11-loop-source-walkthrough.md)
+- [12-processor-source-walkthrough](./12-processor-source-walkthrough.md)
+
+## 第三层：Durable 状态层
+
+这一层负责“什么才算被执行过”。
+
+- `Session.Info`（`packages/opencode/src/session/index.ts:122-164`）定义执行边界。
+- `MessageV2.Part`（`packages/opencode/src/session/message-v2.ts:377-395`）定义最小状态单元。
+- `Session.updateMessage()`（`packages/opencode/src/session/index.ts:686-706`）和 `Session.updatePart()`（`packages/opencode/src/session/index.ts:755-776`）是统一写路径。
+- SQLite 与文件系统保存 durable state，summary / fork / revert 站在这层之上成立。
+
+这一层读完后，你应该能回答：OpenCode 为什么可以 resume、fork、share，为什么工具输出和普通文本能共存在同一条历史里。
+
+继续展开时读：
+
+- [04-session-centric-runtime](./04-session-centric-runtime.md)
+- [05-object-model](./05-object-model.md)
+- [20-storage-and-persistence](./20-storage-and-persistence.md)
+
+## 第四层：横切能力层
+
+这一层负责“哪些能力在主链的固定插槽里介入”。
+
+- `ToolRegistry.tools()` 和 `Tool.Context` 提供统一工具面。
+- `PermissionNext.ask()` 与 `Question.ask()` 提供用户介入原语。
+- `Plugin.trigger()` 与 `MCP.tools()` 折叠扩展能力。
+- `SessionCompaction.process()`、subagent、structured output 把高级能力接回主链。
+- `Bus.publish()` 与 SSE 把 durable 写操作投影成实时事件。
+- retry / revert / overflow compaction 提供恢复路径。
+
+这一层读完后，你应该能回答：为什么 OpenCode 能做这么多事，但仍然没有长出第二套状态系统。
+
+继续展开时读：
+
+- [13-advanced-primitives](./13-advanced-primitives.md)
+- [14-hardcoded-vs-configurable](./14-hardcoded-vs-configurable.md)
+- [16-observability](./16-observability.md)
+- [21-error-recovery](./21-error-recovery.md)
+
+## 这张图的正确读法
+
+如果只记一句话，就记这个顺序：
+
+1. 第一层负责挂载上下文。
+2. 第二层负责推进执行。
+3. 第三层负责保存真相。
+4. 第四层负责在固定插槽里扩展和恢复。
+
+这样再回头看任何目录、模块名或文档标题，都能迅速知道它属于哪一层，为什么会在那里。

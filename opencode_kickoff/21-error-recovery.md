@@ -1,6 +1,6 @@
 # 错误恢复与重试策略：失败后怎么办
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VIII. 运维与可观测
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VIII. 运维与可观测 · **分层定位** 第四层：横切能力层
 > **前置阅读** [12-processor源码解剖](./12-processor-source-walkthrough.md) · [20-持久化与存储](./20-storage-and-persistence.md)
 > **后续阅读** [13-高级能力](./13-advanced-primitives.md)（compaction 作为溢出恢复）· [04-session中心化](./04-session-centric-runtime.md)（revert 语义）
 

@@ -1,6 +1,6 @@
 # 为什么 session 才是中心：源码里它定义的是执行边界，而不是聊天容器
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** III. Session 与状态模型
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** III. Session 与状态模型 · **分层定位** 第三层：Durable 状态层
 > **前置阅读** [03-request-lifecycle](./03-request-lifecycle.md)
 > **后续阅读** [05-对象模型](./05-object-model.md) · [20-持久化与存储](./20-storage-and-persistence.md)
 

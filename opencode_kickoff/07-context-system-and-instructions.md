@@ -1,6 +1,6 @@
 # 上下文工程深拆一：system、provider、environment 与 instruction 是怎样层层叠上去的
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程 · **分层定位** 第二层：Runtime 编排层
 > **前置阅读** [06-上下文工程总览](./06-context-engineering.md)
 > **后续阅读** [08-输入预处理与历史重写](./08-context-input-and-history-rewrite.md)
 

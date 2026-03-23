@@ -1,6 +1,6 @@
 # 把对象模型放回执行链里看：Agent、Session、MessageV2、Tool 与交互原语如何协作
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** IV. 对象模型
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** IV. 对象模型 · **分层定位** 第三层：Durable 状态层
 > **前置阅读** [04-session中心化](./04-session-centric-runtime.md)
 > **后续阅读** [06-上下文工程](./06-context-engineering.md) · [13-高级能力](./13-advanced-primitives.md)
 

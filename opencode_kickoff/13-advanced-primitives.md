@@ -1,6 +1,6 @@
 # subagent、compaction 与 structured output：这些高级能力为什么没有长歪
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VII. 高级能力
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VII. 高级能力 · **分层定位** 第四层：横切能力层
 > **前置阅读** [12-processor源码解剖](./12-processor-source-walkthrough.md) · [05-对象模型](./05-object-model.md)
 > **后续阅读** [14-硬编码与可配置](./14-hardcoded-vs-configurable.md)
 

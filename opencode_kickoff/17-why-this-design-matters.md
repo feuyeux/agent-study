@@ -1,6 +1,6 @@
 # 这套设计为什么值得研究：因为复杂度直接对着长任务运行时开刀
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** IX. 设计哲学
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** IX. 设计哲学 · **分层定位** 读完全套后的价值回看
 > **前置阅读** [16-观测性](./16-observability.md) · [14-硬编码与可配置](./14-hardcoded-vs-configurable.md)
 > **后续阅读** [18-阅读路径](./18-reading-path.md) · [19-最终心智模型](./19-final-mental-model.md)
 

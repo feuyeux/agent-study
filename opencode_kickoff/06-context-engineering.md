@@ -1,6 +1,6 @@
 # 上下文工程并不只发生在 system prompt：OpenCode 在多个阶段共同塑造模型视角
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程 · **分层定位** 第二层：Runtime 编排层
 > **前置阅读** [05-对象模型](./05-object-model.md)
 > **后续阅读** [07-system装配链](./07-context-system-and-instructions.md) · [08-输入预处理](./08-context-input-and-history-rewrite.md) · [09-注入顺序](./09-context-injection-order.md)
 

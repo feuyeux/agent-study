@@ -1,6 +1,6 @@
 # processor 源码逐段解剖：单轮执行怎样被写成 durable parts
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VI. 状态机双层架构
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VI. 状态机双层架构 · **分层定位** 第二层：Runtime 编排层
 > **前置阅读** [10-loop与processor](./10-loop-and-processor.md) · [11-loop源码解剖](./11-loop-source-walkthrough.md)
 > **后续阅读** [13-高级能力](./13-advanced-primitives.md) · [21-错误恢复](./21-error-recovery.md)
 

@@ -1,6 +1,6 @@
 # 上下文注入顺序图：OpenCode 真正控制的是装配顺序，不只是装配内容
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程 · **分层定位** 第二层：Runtime 编排层
 > **前置阅读** [08-输入预处理与历史重写](./08-context-input-and-history-rewrite.md)
 > **后续阅读** [10-loop与processor](./10-loop-and-processor.md)
 

@@ -1,8 +1,8 @@
 # 硬编码与可配置的边界：骨架固定，策略晚绑定
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VII. 高级能力
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VII. 高级能力 · **分层定位** 第四层：横切能力层
 > **前置阅读** [13-高级能力](./13-advanced-primitives.md)
-> **后续阅读** [16-观测性](./16-observability.md) · [15-入口差异](./15-client-differences.md)
+> **后续阅读** [16-观测性](./16-observability.md) · [01-用户入口](./01-user-entry.md)
 
 ```mermaid
 graph TB

@@ -1,6 +1,6 @@
 # 上下文工程深拆二：输入预处理、命令展开与 history rewrite 怎样改写模型看到的世界
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** V. 上下文工程 · **分层定位** 第二层：Runtime 编排层
 > **前置阅读** [07-system装配链](./07-context-system-and-instructions.md)
 > **后续阅读** [09-注入顺序图](./09-context-injection-order.md)
 

@@ -1,6 +1,6 @@
 # 持久化与存储：durable state 存在哪里
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** III. Session 与状态模型
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** III. Session 与状态模型 · **分层定位** 第三层：Durable 状态层
 > **前置阅读** [04-session中心化](./04-session-centric-runtime.md) · [05-对象模型](./05-object-model.md)
 > **后续阅读** [16-观测性](./16-observability.md) · [21-错误恢复](./21-error-recovery.md)
 

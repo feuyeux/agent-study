@@ -1,30 +1,95 @@
-# 一次请求的完整生命周期：一条用户输入怎样被编译成 durable execution log
+# 一次请求怎样穿过四层：从输入到 durable log 的完整生命周期
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** II. 请求生命周期
-> **前置阅读** [02-架构总图](./02-architecture-diagram.md)
-> **后续阅读** [04-session中心化](./04-session-centric-runtime.md) · [10-loop与processor](./10-loop-and-processor.md)
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **分层定位** 连接四层的主链  
+> **前置阅读** [02-architecture-diagram](./02-architecture-diagram.md)  
+> **后续阅读** [04-session-centric-runtime](./04-session-centric-runtime.md) · [10-loop-and-processor](./10-loop-and-processor.md)
+
+如果说 [02](./02-architecture-diagram.md) 解决的是“这套系统分哪四层”，那这一篇解决的就是另一件事：**一次真实请求是怎样按顺序穿过这四层的。**
 
 ```mermaid
 flowchart LR
-    HTTP[POST /session/:id/message] --> Prompt[SessionPrompt.prompt]
-    Prompt --> createUM[createUserMessage<br/>文件展开/synthetic text]
-    Prompt --> Loop[SessionPrompt.loop]
-    Loop -->|pending subtask| Subtask[Subtask分支]
-    Loop -->|pending compaction| Compact[Compaction分支]
-    Loop -->|normal step| Process[SessionProcessor.process]
-    Process --> LLM[LLM.stream]
-    LLM -->|reasoning/text/tool| Parts[MessageV2.Part]
-    Parts --> Update[Session.updatePart]
-    Update --> Return{continue<br/>compact<br/>stop}
-    Return --> Loop
+    L1[第一层<br/>入口挂载] --> L2A[SessionPrompt.prompt]
+    L2A --> L2B[createUserMessage]
+    L2B --> L3A[写入 user message / parts]
+    L3A --> L2C[SessionPrompt.loop]
+    L2C -->|subtask / compaction / normal| L4[第四层能力插槽]
+    L4 --> L2D[SessionProcessor.process]
+    L2D --> L3B[updatePart / updateMessage]
+    L3B --> L1B[SSE / CLI / TUI 看到事件]
+    L3B --> L2C
 ```
 
-最值得跟读的一条链是：`POST /session/:sessionID/message`（`packages/opencode/src/server/routes/session.ts:781-820`）调用 `SessionPrompt.prompt()`（`packages/opencode/src/session/prompt.ts:161-188`），后者先用 `SessionRevert.cleanup()` 清理回滚状态，再把输入交给 `SessionPrompt.createUserMessage()`（`packages/opencode/src/session/prompt.ts:965-1355`）落成真正的 user message，最后进入 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）。请求在这里就已经从“HTTP 调用”变成了“session runtime 的一次推进”。
+## 第一段：请求先穿过第一层，被绑定到实例上下文
 
-`SessionPrompt.createUserMessage()`（`packages/opencode/src/session/prompt.ts:975-1349`）不是简单写 message 头和 text part。它会决定当前 agent 和 model，解析 variant，把 file/agent/subtask part 编译成真正的 `MessageV2.Part`（`packages/opencode/src/session/message-v2.ts:377-395`），并在必要时提前调用 `ReadTool.execute()`（`packages/opencode/src/tool/read.ts:28-231`）或 `MCP.readResource()`（`packages/opencode/src/mcp/index.ts:721-746`）把内容展开成 synthetic text。到这一步为止，“用户输入”已经被一次语义编译。
+无论请求来自 CLI、TUI 还是 Web，它都不会直接跳进模型调用。`Server.createApp()`（`packages/opencode/src/server/server.ts:58-575`）和 `SessionRoutes`（`packages/opencode/src/server/routes/session.ts:25-1023`）会先把它绑定到当前 workspace、directory 和 session。
 
-进入 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:301-318`）后，runtime 会先从 durable history 恢复现场，而不是直接起一轮新模型调用。它会识别 `lastUser`、`lastAssistant`、`lastFinished` 以及 pending `subtask/compaction`，优先消费显式任务（`packages/opencode/src/session/prompt.ts:353-543`），必要时在 overflow 检查后补建 compaction request（`packages/opencode/src/session/prompt.ts:545-558`）。只有这些前置状态都处理完，才会进入 normal processing。
+第一层先完成挂载，确定下面三件事：
 
-普通轮次的入口是 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:560-687`）里创建 assistant message、插 reminder、解析 tools、拼 system 并调用 `SessionProcessor.process()`（`packages/opencode/src/session/processor.ts:46-425`）。processor 再通过 `LLM.stream()`（`packages/opencode/src/session/llm.ts:47-257`）消费 provider 流事件，把 reasoning、text、tool、step、patch 逐项写成 part（`packages/opencode/src/session/processor.ts:63-340`）。这里最关键的不是“模型回复了什么”，而是“这轮执行被拆成了哪些 durable state mutation”。
+1. 这条请求属于哪个 session。
+2. 这次执行工作目录是什么。
+3. 后续 instruction、plugin、tool 应该落在哪个实例上下文里。
 
-本轮结束后，processor 只回 `continue / compact / stop`（`packages/opencode/src/session/processor.ts:421-424`）。`SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:713-723`）据此决定是否继续下一轮、是否创建 compaction message、是否结束执行；而 `SessionSummary.summarize()`（`packages/opencode/src/session/summary.ts:70-82`）和 `SessionCompaction.prune()`（`packages/opencode/src/session/compaction.ts:59-100`）则在旁边持续维护 diff 与旧工具输出的清理。一次请求的终点因此不是“拿到一段文本”，而是“主链完成了对 session durable log 的一次推进”。
+如果这一步错了，后面每一层看到的世界都会错。
+
+## 第二段：进入第二层，输入先被编译，再进入主循环
+
+`POST /session/:sessionID/message`（`packages/opencode/src/server/routes/session.ts:781-820`）最终会调用 `SessionPrompt.prompt()`（`packages/opencode/src/session/prompt.ts:161-188`）。从这里开始，第二层正式接管这次请求。
+
+它先做三件事：
+
+1. 清理可能存在的回滚状态。
+2. 调 `SessionPrompt.createUserMessage()`（`packages/opencode/src/session/prompt.ts:965-1355`）把输入、附件、目录、MCP 资源、agent mention 编译成 durable user message。
+3. 启动 `SessionPrompt.loop()`（`packages/opencode/src/session/prompt.ts:277-735`）。
+
+这一段的关键点是：**用户输入在进入 loop 之前，已经先被编译成 durable state 了。**
+
+## 第三段：第三层先把输入落盘，runtime 才能恢复现场
+
+`createUserMessage()` 完成后，写入的是由 `MessageV2.Part`（`packages/opencode/src/session/message-v2.ts:377-395`）组成的 durable 消息。  
+`Session.updateMessage()`（`packages/opencode/src/session/index.ts:686-706`）和 `Session.updatePart()`（`packages/opencode/src/session/index.ts:755-776`）把这些对象写回数据库和事件流。
+
+当 `SessionPrompt.loop()` 开始工作时，它面对的是**已经落盘的 session history**。这也是它能从 `lastUser`、`lastAssistant`、pending subtask、pending compaction 等状态恢复现场的原因。
+
+## 第四段：第二层进入 loop，先决定本轮到底处理什么
+
+`SessionPrompt.loop()` 的第一职责是判定 session 当前应该消费哪类任务。
+
+它会优先看 durable history 里有没有：
+
+1. pending `subtask`
+2. pending `compaction`
+3. 需要继续的普通 assistant 轮次
+
+只有这些前置状态都处理完，普通轮次才会走到 `SessionProcessor.process()`。这就是 OpenCode 与“每次收到消息就直接调一次 LLM”最大的不同。
+
+## 第五段：第四层在固定插槽里介入，然后第二层继续推进
+
+当普通轮次开始前，第四层能力就会陆续介入：
+
+1. `ToolRegistry.tools()`（`packages/opencode/src/tool/registry.ts:132-173`）决定当前暴露哪些工具。
+2. `InstructionPrompt.system()`、`SystemPrompt.environment()`、`Plugin.trigger()` 等共同构造 system 和 messages。
+3. `PermissionNext.ask()`（`packages/opencode/src/permission/index.ts:148-182`）和 `Question.ask()`（`packages/opencode/src/question/index.ts:109-133`）在需要用户介入时挂起执行。
+4. subagent、compaction、structured output 也会在 loop 或 processor 的固定节点插入。
+
+这一步说明第四层以能力插槽的形式参与第二层推进。
+
+## 第六段：processor 把一次模型流翻译成 durable state mutation
+
+普通轮次真正执行时，`SessionProcessor.process()`（`packages/opencode/src/session/processor.ts:46-425`）会通过 `LLM.stream()`（`packages/opencode/src/session/llm.ts:47-257`）消费 provider 流，再把 reasoning、text、tool、patch、step 等内容一项项写成 `MessageV2.Part`。
+
+这里最值得盯住的是“本轮被拆成了哪些 durable mutation”。  
+processor 的职责是把单轮执行**翻译成可持久化、可恢复、可观察的 part 序列**。
+
+## 第七段：第三层落盘后，第一层和第二层同时得到后续动作
+
+本轮写入完成以后，会发生两件事：
+
+1. 第三层通过 `updateMessage()` / `updatePart()` 继续扩充 durable history。
+2. 第一层通过 `Bus.publish()` 和 `/event` SSE 把变化推给 CLI、TUI、Web。
+
+与此同时，processor 只向 loop 返回 `continue / compact / stop`。  
+loop 再根据这个返回值决定是否继续下一轮、是否创建 compaction 请求、是否结束本次推进。
+
+一次请求的终点可以概括成：
+
+**四层一起完成了一次对 session durable log 的推进、持久化和投影。**

@@ -1,6 +1,6 @@
 # 观测性为什么这么强：因为主状态本来就是事件化的
 
-> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VIII. 运维与可观测
+> **总纲** [00-opencode_ko](./00-opencode_ko.md) · **能力域** VIII. 运维与可观测 · **分层定位** 第四层：横切能力层
 > **前置阅读** [12-processor源码解剖](./12-processor-source-walkthrough.md)
 > **后续阅读** [21-错误恢复](./21-error-recovery.md) · [17-设计价值](./17-why-this-design-matters.md)
 
