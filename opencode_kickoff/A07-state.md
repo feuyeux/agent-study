@@ -1,170 +1,214 @@
-# OpenCode 源码深度解析 A07：第 5 步：模型流返回后，message/part 怎样写回 Durable State 并被重新读出
+# OpenCode 源码深度解析 A07：模型流返回后，message/part 怎样写回 Durable State 并被重新读出
 
-A07 不是和 A06 并列的另一个话题，而是它的后半段。A06 讲的是 `processor()` 如何进入 `LLM.stream()` 发起模型调用；A07 讲的是模型流返回后，`processor()` 怎样通过 `Session.updatePart()`、`Session.updatePartDelta()`、`Session.updateMessage()` 把结果写回 durable history，并通过 bus 与分页读取重新投影出来。
+A06 解决了“请求怎样发出去”，A07 解决的是更关键的问题：模型流回来以后，OpenCode 怎样把它拆成 durable parts，怎样保证“先写库、再发事件”，以及前端/下一轮 loop 又怎样把这些历史重新投影回去。
 
-## 一、代码坐标
+---
 
-| 主题 | 文件与代码行 | 细节 |
+## 1. Durable 写回真正只有三组 API
+
+写回核心不在 `processor.ts`，而在 `packages/opencode/src/session/index.ts`：
+
+| API | 代码坐标 | 做什么 |
 | --- | --- | --- |
-| DB 路径与 PRAGMA | `packages/opencode/src/storage/db.ts:29-40`, `81-109` | `opencode.db` 路径、WAL、`busy_timeout`、`cache_size` 等都在这里。 |
-| `Database.use/effect/transaction` | `packages/opencode/src/storage/db.ts:126-162` | effect 队列和事务提交后的副作用执行顺序。 |
-| `Session.updateMessage()` | `packages/opencode/src/session/index.ts:686-706` | `MessageTable` upsert 后发布 `message.updated`。 |
-| `Session.updatePart()` | `packages/opencode/src/session/index.ts:755-776` | `PartTable` upsert 后发布 `message.part.updated`。 |
-| `Session.updatePartDelta()` | `packages/opencode/src/session/index.ts:778-788` | 纯 bus delta 事件，不回写数据库。 |
-| `Bus.publish()` | `packages/opencode/src/bus/index.ts:41-64` | 触发 instance 内订阅者，并同步发到 `GlobalBus`。 |
-| `MessageV2.page()/stream()` | `packages/opencode/src/session/message-v2.ts:794-850` | 从 `MessageTable` 分页 hydrate，逆序流式回放。 |
-| `MessageV2.hydrate()` | `packages/opencode/src/session/message-v2.ts:533-557` | 把 message 行和 part 行重新组回 `WithParts[]`。 |
+| `Session.updateMessage()` | `session/index.ts:686-706` | upsert 一条 message 头，并发布 `message.updated`。 |
+| `Session.updatePart()` | `session/index.ts:755-776` | upsert 一条完整 part，并发布 `message.part.updated`。 |
+| `Session.updatePartDelta()` | `session/index.ts:778-789` | **不落库**，只发布增量事件。 |
 
-## 二、A06 和 A07 的承接点
+再往下一层，是 `Database.use()` / `Database.effect()`：
 
-承接点不在目录层，而在同一个 `processor()` 函数内部：
+1. `Database.use()` 在当前 DB 上下文里执行写操作，见 `storage/db.ts:126-138`
+2. `Database.effect()` 把事件推迟到 DB 写操作之后再执行，见 `140-146`
 
-- `packages/opencode/src/session/processor.ts:54`：A06 的起点，`processor()` 调 `LLM.stream(streamInput)`。
-- `packages/opencode/src/session/processor.ts:79-107`：reasoning part 从内存对象开始写入，再用 `updatePartDelta()` 做流式增量。
-- `packages/opencode/src/session/processor.ts:113-208`：tool pending/running/completed/error 全都通过 `Session.updatePart()` 落盘。
-- `packages/opencode/src/session/processor.ts:264`, `419-420`：step 完成和整轮结束时，通过 `Session.updateMessage()` 回写 assistant message 的 finish/cost/tokens/completed。
-- `packages/opencode/src/session/processor.ts:303-338`：text part 先 `updatePart()` 建骨架，再 `updatePartDelta()` 推实时增量，最后 `updatePart()` 写入最终文本。
+这条顺序非常关键：**先写 durable state，再通过 Bus 对外广播。**
 
-所以 A06 和 A07 不是“前一篇调用后一篇”这种文件间调用关系，而是同一条执行链上的前后两段：
+---
 
-1. A06 解释 `processor -> LLM.stream()` 这次请求是怎样发给 provider 的。
-2. A07 解释 provider 流事件回来后，`processor -> Session.update* -> Database.effect -> Bus.publish -> MessageV2.stream()` 这条写回与回放链是怎样成立的。
+## 2. `processor` 如何把模型流拆成 part
 
-## 三、真正的“落盘即发布”是怎么做出来的
+`packages/opencode/src/session/processor.ts:56-351` 是真正的事件分发器。当前实现里最重要的事件分类如下。
 
-`packages/opencode/src/storage/db.ts:126-162` 这套机制非常具体：
+### 2.1 reasoning 事件
 
-1. `Database.use()` 如果没有事务上下文，就创建一个 `{ tx, effects }` 上下文。
-2. 所有 `Database.effect(fn)` 都只把副作用先推到 `effects` 数组里，坐标在 `140-145`。
-3. 外层 `use()` 或 `transaction()` 执行完 callback 后，才顺序执行这些 effects，坐标在 `132-157`。
+1. `reasoning-start`：创建空的 `reasoning` part，见 `63-80`
+2. `reasoning-delta`：更新内存对象并发 `updatePartDelta(text)`，见 `82-95`
+3. `reasoning-end`：补 `time.end`，再 `updatePart()`，见 `97-110`
 
-所以 `Session.updateMessage()` 和 `Session.updatePart()` 里把 `Bus.publish()` 包在 `Database.effect()` 里，不是风格问题，而是为了保证“数据库写成功了，事件才可见”。
+因此 reasoning 既有实时增量，也有最终落盘快照。
 
-## 四、message 与 part 的写路径不要混为一谈
+### 2.2 text 事件
 
-### 1. message 级写入
+1. `text-start`：创建空 `text` part，见 `291-304`
+2. `text-delta`：只发 delta 事件，见 `306-318`
+3. `text-end`：跑 `experimental.text.complete` plugin hook，补齐最终文本和时间，再 `updatePart()`，见 `320-341`
 
-`packages/opencode/src/session/index.ts:686-706`：
+OpenCode 的文本输出不是按 token 永久存库，而是“delta 只走事件，最终文本走 part snapshot”。
 
-- 把 `msg.time.created` 提成独立列 `time_created`。
-- `id` 和 `session_id` 单独存列。
-- 其余字段进入 `data` JSON。
-- 用 `onConflictDoUpdate({ target: MessageTable.id, set: { data } })` 做幂等 upsert。
+### 2.3 tool 事件
 
-### 2. part 级写入
+1. `tool-input-start`：创建 `pending` tool part，见 `112-127`
+2. `tool-call`：把 tool part 切到 `running`，写入结构化输入，见 `135-180`
+3. `tool-result`：切到 `completed`，写 output/title/metadata/attachments，见 `181-203`
+4. `tool-error`：切到 `error`，见 `205-230`
 
-`packages/opencode/src/session/index.ts:755-776`：
+也就是说，tool 在 durable history 里是显式状态机，不是一段文本描述。
 
-- `id`、`message_id`、`session_id`、`time_created` 独立列。
-- 其余 part 字段进入 `data` JSON。
-- 发布的是 `message.part.updated`，负载里直接带完整 `part` 快照。
+### 2.4 step 事件
 
-### 3. delta 事件不是持久化
+1. `start-step`：`Snapshot.track()`，并写 `step-start` part，见 `234-243`
+2. `finish-step`：计算 usage/cost，更新 assistant message，写 `step-finish` 和可能的 `patch` part，见 `245-289`
 
-`packages/opencode/src/session/index.ts:778-788` 的 `updatePartDelta()` 只 `Bus.publish(MessageV2.Event.PartDelta, input)`。真正的 durable 文本内容是 processor 在本地对象上累加后，再通过 `updatePart()` 最终覆写回去。
+step 事件是 OpenCode 把“每轮推理边界”和“文件系统快照边界”连接起来的地方。
 
-## 五、历史回放怎样跟写路径对上
+---
 
-`packages/opencode/src/session/message-v2.ts:794-850` 的读取顺序是：
+## 3. `doom loop` 检测是怎么做的
 
-1. `page()` 先按 `MessageTable.time_created` 和 `id` 分页。
-2. `533-557` 的 `hydrate()` 再批量查 `PartTable`，按 `message_id, part_id` 排序组回消息。
-3. `stream()` 用 `page()` 做分页循环，最终按时间顺序 yield。
+`tool-call` 分支里，`152-177` 会读取当前 assistant message 已有的 parts，取最后三个。如果连续三次出现：
 
-这就是为什么 loop 和 CLI 总是依赖 `MessageV2.stream()`/bus，而不是手写 SQL 拼历史。
+1. 同一个 tool
+2. 相同输入
+3. 状态都已经不是 pending
 
-## 六、processor 的完整事件分类体系
+就触发 `Permission.ask({ permission: "doom_loop", ... })`。
 
-`processor.ts:56-353` 的 `for await (const value of stream.fullStream)` 覆盖了 AI SDK `StreamTextResult` 定义的完整事件谱系，按用途分五类：
+这说明 doom loop 不是靠模型自觉停止，而是 runtime 对 tool-call 序列做模式检测，然后把“是否继续”升级成权限问题。
 
-### 推理类（reasoning-*）
+---
 
-| 事件 | processor 处理逻辑 |
-|---|---|
-| `reasoning-start` | 创建内存 `reasoningMap[id]` 对象，`updatePart()` 落 `type: "reasoning"` 骨架 |
-| `reasoning-delta` | 本地累加 `part.text += value.text`，`updatePartDelta()` 推送增量到 bus |
-| `reasoning-end` | 截断空白、记结束时间、`updatePart()` 最终落盘 |
+## 4. `finish-step` 才是 assistant message 真正定型的时刻
 
-reasoning 不走 `tool-input-start/delta/end` 这套工具链，而是走独立的 part 类型。`reasoning-delta` 事件量大，所以用 `updatePartDelta()` 纯推送到 bus，不落库。
+`finish-step` 事件处理里，`245-289` 做了五件事：
 
-### 文本类（text-*）
+1. `Session.getUsage(...)` 计算 tokens 和 cost
+2. 写回 `assistantMessage.finish`
+3. 写回 `assistantMessage.cost` / `tokens`
+4. 写一条 `step-finish` part
+5. 若 `Snapshot.patch(snapshot)` 发现文件变化，再写一条 `patch` part
 
-| 事件 | processor 处理逻辑 |
-|---|---|
-| `text-start` | 创建内存 `currentText` 对象，`updatePart()` 建 `type: "text"` 骨架 |
-| `text-delta` | 本地累加 `currentText.text += value.text`，`updatePartDelta()` 推送增量 |
-| `text-end` | 触发 `experimental.text.complete` 插件钩子、`updatePart()` 最终落盘 |
+然后才触发：
 
-与 reasoning 的区别是：reasoning part 的 `providerMetadata` 可能包含 thinking tokens 计量，而 text part 的 metadata 通常为空。两者都支持增量推送。
+1. `SessionSummary.summarize(...)`
+2. overflow 检测，必要时置 `needsCompaction = true`
 
-### 工具类（tool-*）
+因此 assistant message 的“完成态”不是 text-end，而是 finish-step。
 
-| 事件 | processor 处理逻辑 |
-|---|---|
-| `tool-input-start` | 创建 `toolcalls[id]` 条目，`updatePart()` 建 `type: "tool", status: "pending"` |
-| `tool-input-delta` | 当前版本未使用（保留接口） |
-| `tool-input-end` | 当前版本未使用（保留接口） |
-| `tool-call` | 更新 `toolcalls[id]` 为 `status: "running"`、`updatePart()`；触发 doom loop 检测 |
-| `tool-result` | 更新为 `status: "completed"`、`updatePart()`；注入 `output`/`title`/`metadata` |
-| `tool-error` | 更新为 `status: "error"`、`updatePart()`；判断是否 `RejectedError` 以决定是否 `blocked` |
+---
 
-注意：`tool-input-*` 和 `tool-call` 是两套不同事件。前者是 SDK 解析输入参数的中间状态，后者是输入解析完成、准备执行。两个事件之间的 delta 在当前版本里被忽略了。
+## 5. 错误、重试与状态迁移
 
-### 步骤边界类
+### 5.1 错误先被统一映射成 `MessageV2` 错误对象
 
-| 事件 | processor 处理逻辑 |
-|---|---|
-| `start-step` | `Snapshot.track()` 开启本轮文件快照跟踪 |
-| `finish-step` | 汇总 usage/cost、更新 assistant message 的 finishReason/cost/tokens、`Snapshot.patch()` 计算文件变更；若 token 超限则标记 `needsCompaction = true` |
-| `start` | 置 session 状态为 `busy` |
-| `finish` | 当前版本无操作（留空） |
+`processor.ts:354-386` 捕获异常后，会用 `MessageV2.fromError(...)` 转换成：
 
-### 错误类
+1. `AbortedError`
+2. `AuthError`
+3. `ContextOverflowError`
+4. `APIError`
+5. `StructuredOutputError`
+6. `NamedError.Unknown`
 
-| 事件 | processor 处理逻辑 |
-|---|---|
-| `error` | 直接 throw，进入 processor 的 `catch` 块做重试/分类 |
-| `tool-error` | 更新 part 状态后，判断是否 `Permission.RejectedError` 或 `Question.RejectedError`，是则设置 `blocked = true` |
+### 5.2 可重试错误会进入 `SessionStatus.retry`
 
-## 七、doom loop 检测机制
+如果 `SessionRetry.retryable(error)` 有结果：
 
-`processor.ts:155-177` 有一个专门的对策：
+1. `attempt++`
+2. `SessionRetry.delay(...)` 算出下一次重试时间
+3. `SessionStatus.set(sessionID, { type: "retry", ... })`
+4. `SessionRetry.sleep(delay, abort)`
 
-```typescript
-// 同一工具连续调用 DOOM_LOOP_THRESHOLD(3) 次，且输入完全相同
-if (lastThree.length === DOOM_LOOP_THRESHOLD &&
-    lastThree.every(p => p.tool === value.toolName &&
-                        JSON.stringify(p.state.input) === JSON.stringify(value.input)))
+不满足重试条件时，才把错误写进 assistant message 并停机。
+
+### 5.3 `idle` / `busy` / `retry` 是独立于消息历史的临时状态
+
+`packages/opencode/src/session/status.ts:9-99` 维护的是 instance-local 状态：
+
+1. `busy`
+2. `retry`
+3. `idle`
+
+它们通过 `session.status` 事件广播，但不写进 message/part history。这是 OpenCode 少数明确不 durable 的 runtime 状态。
+
+---
+
+## 6. `updatePartDelta()` 为什么不落库
+
+这是一个经常会被误解的设计点。
+
+`session/index.ts:778-789` 的 `updatePartDelta()` 只调用：
+
+```ts
+Bus.publish(MessageV2.Event.PartDelta, input)
 ```
 
-触发后会调 `Permission.ask({ permission: "doom_loop", ... })`，让用户确认是否继续。这里的 `always` 参数会把该工具加入 `agent.permission` 的 `always` 集合，后续轮次不再触发此检测。
+没有任何数据库写操作。
 
-这个机制防止模型在同一个工具调用上陷入无限循环。
+它的语义是：
 
-## 八、processor 返回值与 loop 的状态迁移
+1. 给正在订阅的 CLI/TUI/Web 一个实时增量流
+2. 最终一致性依赖后续 `updatePart()` 的完整 part snapshot
 
-`processor.process()` 最终返回三种状态：
+所以 OpenCode 当前的 durable 模型并不是“token 级落库”，而是“token 级事件 + part 级快照”。
 
-| 返回值 | 触发条件 | loop 行为 |
-|---|---|---|
-| `"continue"` | 正常结束、无错误、无需 compaction | 下一轮 `loop()` 重新 `MessageV2.stream()` 读历史 |
-| `"compact"` | `finish-step` 时 `SessionCompaction.isOverflow()` 为 true | `loop()` 在 `lastFinished` 后插入 `compaction` user message |
-| `"stop"` | `tool-error` 时 blocked，或 `assistantMessage.error` 不为空 | loop 退出；外部（CLI/Web）收到 error 事件 |
+---
 
-retry 循环（`354-387`）不在 process 返回值里体现——它发生在 process 内部，通过 `continue` 重新执行本轮，而非返回给 loop。
+## 7. 写完以后，历史怎样被重新读出来
 
-## 九、`Bus` 与 `GlobalBus` 的区别
+`packages/opencode/src/session/message-v2.ts` 负责 replay/projection。
 
-`Session.updatePart()` 里 `Bus.publish()` 发的是**进程内总线**，只通知同一个进程内的订阅者（如 TUI 的实时渲染回调）。
+### 7.1 数据库回放
 
-`Bus.publish()` 内部还同时向 `GlobalBus` 同步（`bus/index.ts:41-64`），`GlobalBus` 是进程间/跨实例广播通道，用于桌面端 sidecar 与前端之间的通信。
+1. `page()`：`794-836`，按 cursor 分页读取 message
+2. `hydrate()`：`533-557`，把 message rows 和 part rows 组装成 `WithParts`
+3. `stream()`：`838-850`，不断翻页并按“最新到最旧”顺序回放
 
-所以写入路径是：`processor -> Session.update*() -> Database.effect() -> Bus.publish() -> Local subscribers + GlobalBus`。
+### 7.2 compacted history 过滤
 
-## 十、结论
+`filterCompacted()` 在 `882-898` 会在遇到 summary assistant 后折叠更老的一段历史，保证 loop 和 UI 不会无限带着旧上下文。
 
-1. OpenCode 的一致性不是”先写库再发事件”的口头约定，而是 `Database.effect()` 明确实现出来的提交后副作用队列。
-2. `updatePartDelta()` 只是实时投影通道，不是 durable text 存储。
-3. 无论是 loop 恢复现场还是前端重放历史，最终都回到 `MessageV2.page()/hydrate()/stream()` 这组函数。
-4. processor 的事件处理体系是严格分类的：reasoning/text 用增量推送，tool 用幂等状态机，步骤边界触发 snapshot/usage/compaction 判断，错误决定 retry/compact/stop 三种退出路径。
-5. doom loop 检测和 GlobalBus 广播是两个容易被忽略的横切关注点：前者防止工具重放，后者打通桌面端的 sidecar 与前端渲染。
+### 7.3 模型投影
+
+`toModelMessages()` 在 `559-792` 会把 durable `MessageV2.WithParts[]` 转成 AI SDK `ModelMessage[]`：
+
+1. user text/file/compaction/subtask -> user message
+2. assistant text/reasoning/tool result/tool error -> assistant message
+3. 对不支持 media-in-tool-result 的 provider，额外注入 user file message
+
+这意味着同一份 durable history 同时支撑了：
+
+1. 下一轮 loop 的推理上下文
+2. HTTP `/session/:id/message` 的历史查询
+3. CLI/TUI/Web 的历史回放
+
+---
+
+## 8. 事件如何从 DB 写回传播到前端
+
+事件链路是：
+
+1. `Session.updateMessage()` / `updatePart()` 在 `Database.effect()` 里触发 `Bus.publish(...)`
+2. `Bus.publish()` 会：
+   - 通知当前 `Instance` 的本地订阅者
+   - 同时转发到 `GlobalBus`
+3. `/event` 把 `Bus.subscribeAll()` 转成 SSE，见 `server/routes/event.ts:13-84`
+4. `/global/event` 把 `GlobalBus` 转成 SSE，见 `server/routes/global.ts:43-124`
+
+因此前端实时看到的不是“processor 直接推 token”，而是“durable write 完成后的事件投影”。
+
+---
+
+## 9. 为什么 A07 是整条主线最关键的一环
+
+如果没有这一层，OpenCode 就会退化成“模型流 + UI 临时状态”。而当前实现之所以能支持：
+
+1. session 恢复
+2. fork
+3. revert
+4. compaction
+5. 多端订阅
+6. diff/summary
+
+靠的都是同一个原则：
+
+> 先把执行过程写成 durable message/part history，再让 UI、下一轮 loop 和外部 API 去消费这份 history。
+
+A07 讲清楚之后，A 线主流程就闭合了。接下来再看 B 线，才能把这条主线背后的对象模型、基础设施和设计哲学补齐。

@@ -160,13 +160,13 @@ body{font-family:Nunito,'PingFang SC','Microsoft YaHei',sans-serif;background:va
 <div class="divider"></div>
 
 <div class="section-h"><div class="sn o">3</div><div class="st">Durable 状态模型</div></div>
-<p class="sd">Session.Info + MessageV2.Part 构成真实执行状态，存储在本地 SQLite 中</p>
+<p class="sd">Session.Info + MessageV2.Part 构成真实执行状态；核心索引在本地 SQLite，补充 diff/blob 落在 Storage JSON</p>
 
 <div class="state-grid">
 <div class="sc s"><div class="sch"><span class="sce">&#x1F4E6;</span><div><div class="sct">Session.Info</div><div class="scs">session/index.ts</div></div></div><div class="scd">执行边界容器。定义工作目录、workspace、父子关系、权限、summary、share、revert 锚点。不是聊天容器，而是运行时宿主。</div><div class="tags"><span class="tag g">directory</span><span class="tag b">workspaceID</span><span class="tag o">permission</span><span class="tag pk">revert</span><span class="tag pp">parentID</span></div></div>
 <div class="sc pr"><div class="sch"><span class="sce">&#x1F9A9;</span><div><div class="sct">MessageV2.Part</div><div class="scs">session/message-v2.ts</div></div></div><div class="scd">最小状态单元。text、reasoning、tool、step、patch、subtask、compaction 都是同一层 Part，共享统一写路径。</div><div class="tags"><span class="tag g">text</span><span class="tag b">reasoning</span><span class="tag o">tool</span><span class="tag pk">step</span><span class="tag pp">patch</span><span class="tag">subtask</span><span class="tag">compaction</span></div></div>
-<div class="sc sq"><div class="sch"><span class="sce">&#x1F5C4;</span><div><div class="sct">SQLite WAL</div><div class="scs">opencode.db &middot; Drizzle ORM</div></div></div><div class="scd">全部运行时状态落在一个本地 SQLite 文件。Session / Message / Part 三张核心表。无外部数据库依赖。</div><div class="tags"><span class="tag o">SessionTable</span><span class="tag b">MessageTable</span><span class="tag g">PartTable</span><span class="tag">WAL 模式</span></div></div>
-<div class="sc ev"><div class="sch"><span class="sce">&#x1F4E1;</span><div><div class="sct">Bus 事件投影</div><div class="scs">bus/index.ts &middot; /event SSE</div></div></div><div class="scd">写路径 = 事件源。每次 updatePart 都是一次 DB upsert + 一次 Bus.publish。SSE 实时推送给 CLI / TUI / Web。</div><div class="tags"><span class="tag pk">message.updated</span><span class="tag b">part.updated</span><span class="tag g">part.delta</span></div></div>
+<div class="sc sq"><div class="sch"><span class="sce">&#x1F5C4;</span><div><div class="sct">SQLite + Storage</div><div class="scs">opencode.db &middot; Drizzle ORM</div></div></div><div class="scd">session/message/part 等核心索引在 SQLite；summary diff 等补充材料通过 Storage 写入文件系统。无外部数据库依赖。</div><div class="tags"><span class="tag o">SessionTable</span><span class="tag b">MessageTable</span><span class="tag g">PartTable</span><span class="tag">session_diff</span></div></div>
+<div class="sc ev"><div class="sch"><span class="sce">&#x1F4E1;</span><div><div class="sct">Bus 事件投影</div><div class="scs">bus/index.ts &middot; /event SSE</div></div></div><div class="scd">`updateMessage`/`updatePart` 会先落库再发事件；`updatePartDelta` 只发流式增量，不落库。`/event` 与 `/global/event` 再把这些事件转成 SSE。</div><div class="tags"><span class="tag pk">message.updated</span><span class="tag b">part.updated</span><span class="tag g">part.delta</span></div></div>
 </div>
 
 <div class="divider"></div>
@@ -196,7 +196,7 @@ body{font-family:Nunito,'PingFang SC','Microsoft YaHei',sans-serif;background:va
 
 <div class="caps-row">
 <div class="cap"><div class="em">&#x1F476;</div><div class="nm">Subagent</div><div class="ds">不是 persona 切换，而是 <strong>child session</strong>。TaskTool 通过 Session.create() 创建子 session，走同一主链，共享 runtime 但隔离状态和权限。</div></div>
-<div class="cap"><div class="em">&#x1F4E6;</div><div class="nm">Compaction</div><div class="ds">不是后台 GC，而是 <strong>显式会话阶段</strong>。overflow 触发后裁剪旧消息、生成 summary、重放关键输入，重写执行起点。</div></div>
+<div class="cap"><div class="em">&#x1F4E6;</div><div class="nm">Compaction</div><div class="ds">不是后台 GC，而是 <strong>显式写回历史</strong>。runtime 会插入 `compaction` part，再由隐藏 agent 生成 summary；旧历史保留，只是在回放时折叠。</div></div>
 <div class="cap"><div class="em">&#x1F3AF;</div><div class="nm">Structured Output</div><div class="ds">不是 prompt 约束，而是 <strong>tool 协议</strong>。动态注入 structured output tool，强制 toolChoice=required，模型必须完成工具调用才停机。</div></div>
 </div>
 
@@ -208,7 +208,7 @@ body{font-family:Nunito,'PingFang SC','Microsoft YaHei',sans-serif;background:va
 <div class="entries-grid">
 <div class="et"><div class="ic">&#x2328;</div><div class="lb">CLI</div><div class="ds">内嵌 fetch<br>SDK &rarr; fetch()</div></div>
 <div class="et2"><div class="ic">&#x1F5A5;</div><div class="lb">TUI</div><div class="ds">RPC Worker<br>SDK &rarr; RPC &rarr; fetch()</div></div>
-<div class="et3"><div class="ic">&#x1F30D;</div><div class="lb">Web</div><div class="ds">标准 HTTP<br>Browser &rarr; HTTP</div></div>
+<div class="et3"><div class="ic">&#x1F30D;</div><div class="lb">Web</div><div class="ds">本地 Server.listen()<br>未知路径 &rarr; app.opencode.ai</div></div>
 <div class="et4"><div class="ic">&#x1F517;</div><div class="lb">ACP</div><div class="ds">ND-JSON 桥<br>stdin &rarr; HTTP</div></div>
 <div class="et5"><div class="ic">&#x1F5A5;</div><div class="lb">Desktop</div><div class="ds">Sidecar<br>Native &rarr; serve</div></div>
 </div>

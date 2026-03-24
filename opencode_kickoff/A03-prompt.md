@@ -1,81 +1,183 @@
-# OpenCode 源码深度解析 A03：第 1 步：`SessionPrompt.prompt()` 先把用户输入编译成 Durable User Message
+# OpenCode 源码深度解析 A03：`SessionPrompt.prompt()` 如何把用户输入编译成 durable user message
 
-`prompt()` 本身并不直接进行模型推理。它的职责是把用户输入标准化成一条已经落盘的 user message，并把后续 `loop()` 所需的上下文约束提前写进去。这是整条执行链的起点。
+从这一篇开始，正式进入 session runtime。OpenCode 的第一步并不是直接调模型，而是先把用户输入编译成一条 durable user message，再把各种输入附件和指令展开成若干 part。后续所有编排、回放、fork、revert 都建立在这一步产出的结构上。
 
-## 一、代码坐标
+---
 
-| 主题 | 文件与代码行 | 细节 |
-| --- | --- | --- |
-| `PromptInput` schema | `packages/opencode/src/session/prompt.ts:95-160` | 定义 session、model、agent、format、parts 等输入契约。 |
-| `prompt()` 主入口 | `packages/opencode/src/session/prompt.ts:162-188` | cleanup、createUserMessage、touch、兼容旧 `tools` 参数、进入 loop。 |
-| `resolvePromptParts()` | `packages/opencode/src/session/prompt.ts:191-240` | 把 `@file` / `@dir` / `@agent` 展开成标准 parts。 |
-| `createUserMessage()` | `packages/opencode/src/session/prompt.ts:966-1355` | 生成 user message info，展开 file/agent/resource parts，最后落盘。 |
-| MCP resource 分支 | `packages/opencode/src/session/prompt.ts:1000-1067` | `part.source.type === "resource"` 时直接调用 `MCP.readResource()`。 |
-| 本地 file/data URL 分支 | `packages/opencode/src/session/prompt.ts:1068-1269` | 文本文件走 ReadTool，目录走 list/read，二进制走 base64 file part。 |
-| `@agent` 转译 | `packages/opencode/src/session/prompt.ts:1272-1294` | 追加 agent part，再补一段 synthetic text 引导 task tool。 |
-| `insertReminders()` | `packages/opencode/src/session/prompt.ts:1358-1495` | build/plan 切换、计划文件路径提示、系统 reminder 注入。 |
+## 1. `prompt()` 自己做的事其实很少，但顺序非常关键
 
-## 二、`prompt()` 的真实顺序
+`packages/opencode/src/session/prompt.ts:162-188` 的 `prompt()` 只有三段：
 
-`packages/opencode/src/session/prompt.ts:162-188` 的执行顺序非常固定：
+1. `Session.get()` 取 session。
+2. `SessionRevert.cleanup(session)` 清理尚未提交的 revert 状态。
+3. `createUserMessage(input)` 写 durable user message。
+4. `Session.touch(sessionID)` 刷新 session 时间。
+5. 如需兼容旧 `tools` 参数，则把它翻译成 session permission。
+6. 若 `noReply !== true`，进入 `loop({ sessionID })`。
 
-1. `163-164` 先 `Session.get()` 再 `SessionRevert.cleanup(session)`，把上一次 revert 残留清干净。
-2. `166` 调 `createUserMessage(input)`，这里已经会把 user message 和全部 parts 写进数据库。
-3. `167` 调 `Session.touch(sessionID)` 更新 session 活跃时间。
-4. `171-182` 把 `tools` 布尔配置兼容成 permission rules，并写回 session。
-5. `184-186` 如果 `noReply === true`，直接返回刚写好的 user message。
-6. `188` 否则进入 `loop({ sessionID })`。
+这个顺序的意义是：
 
-所以 `prompt()` 的职责不是“发请求给模型”，而是“把一轮输入编译成 durable state，再启动调度器”。
+1. **revert 清理一定发生在新输入之前**，否则历史会处于“逻辑上已回滚、物理上还没删”的中间态。
+2. **用户输入先 durable，再开始推理**，后面的 loop 和前端订阅都能看到这条输入已经存在。
 
-## 三、`createUserMessage()` 真正做了哪些编译
+---
 
-### 1. 先确定 message info，再展开 parts
+## 2. `PromptInput` 不是“文本 + 文件”的简化模型
 
-`packages/opencode/src/session/prompt.ts:966-989` 先生成 user message info，包括：
+`PromptInput` 定义在 `95-159`，支持的 part 输入有四种：
 
-- `id`
-- `sessionID`
-- `agent`
-- `model`
-- `system`
-- `format`
-- `variant`
+1. `text`
+2. `file`
+3. `agent`
+4. `subtask`
 
-这一步先固定消息头，后面的 part 扩展都要挂到这个 `messageID` 上。
+再配合 message 级字段：
 
-### 2. `file` part 不是简单透传
+1. `model`
+2. `agent`
+3. `format`
+4. `system`
+5. `variant`
+6. `noReply`
 
-`packages/opencode/src/session/prompt.ts:998-1269` 对 `file` part 有三条完全不同的路径：
+这说明从 runtime 视角看，用户这次输入不只是“一段文本”，而是一份待编译的中间表示。
 
-- `1000-1067`：MCP resource，先读取资源内容，再塞入 synthetic text 和记账 file part。
-- `1068-1210`：`file:` + `text/plain`，会调用 `ReadTool` 真读文件，必要时根据 URL range 和 LSP symbol 扩展行范围，核心在 `1113-1167`。
-- `1213-1247`：目录路径会转成目录读取结果。
-- `1249-1268`：非文本文件会读字节并改写成 `data:${mime};base64,...` 的 file part。
+---
 
-这也是为什么 OpenCode 的“附件”不是裸引用，而是会在消息写入前主动补齐可供模型消费的上下文。
+## 3. 编译第一步：先选定这条 user message 的 agent/model/variant
 
-### 3. `@agent` 不是立即启动子任务
+`createUserMessage()` 在 `966-989` 先组装 `MessageV2.User` 头信息：
 
-`packages/opencode/src/session/prompt.ts:1272-1294` 遇到 `agent` part 时，并不会直接执行 subagent。它会：
+1. agent：优先 `input.agent`，否则取默认 agent。
+2. model：优先 `input.model`，否则 `agent.model`，再否则 `lastModel(sessionID)`。
+3. variant：优先 `input.variant`，否则当 agent 预设 variant 且当前 model 确实支持时才继承。
 
-- 保留一个 `type: "agent"` part。
-- 再追加一段 synthetic text，明确要求“基于上面的消息和上下文，生成 prompt 并调用 task tool”。
+这一步之后，user message 已经具备了后续 loop 所需的关键调度信息：
 
-真正的 subtask 调度发生在 A04 的 `loop()` 里，不在 `createUserMessage()`。
+1. 这轮应由哪个 agent 解释。
+2. 这轮应使用哪个 provider/model。
+3. 是否有 `system` 覆盖或 `json_schema` 输出格式。
 
-## 四、`insertReminders()` 是写到消息里的，不是只在内存里拼接
+OpenCode 把这些信息放在 **user message 头** 上，而不是放在某个调用参数对象里临时传递，这就是 durable runtime 的第一个特征。
 
-`packages/opencode/src/session/prompt.ts:1358-1495` 有两套逻辑：
+---
 
-- `1362-1385`：实验 plan mode 关闭时，只在最后一个 user message 上追加 `PROMPT_PLAN` 或 `BUILD_SWITCH` synthetic text part。
-- `1391-1407`：从 `plan -> build` 切换时，如果计划文件存在，会直接 `Session.updatePart()` 把 reminder 写进当前 user message。
-- `1411-1493`：进入 plan mode 时，会把整段 `<system-reminder>...</system-reminder>` 写成一个 durable text part，其中明确写死 plan 文件路径、只允许编辑 plan 文件、以及 agent 工作流。
+## 4. `resolvePromptParts()`：命令模板和 markdown 输入会先被预编译
 
-也就是说，plan/build 切换不是一次“临时 prompt 拼接”，而是对 durable history 的显式修改。
+`packages/opencode/src/session/prompt.ts:191-240` 的 `resolvePromptParts()` 会把一段模板文本里的引用预解析成 part：
 
-## 五、结论
+1. 默认先生成一个 `text` part。
+2. `ConfigMarkdown.files(template)` 找到 `@file` / `@dir` 风格引用。
+3. 若路径存在：
+   - 目录转成 `file` part，mime 为 `application/x-directory`
+   - 文件转成 `file` part，mime 为 `text/plain`
+4. 若路径不存在，则尝试把这个名字解释成 agent 名，生成 `agent` part。
 
-1. `prompt()` 先把 user message 写进数据库，再进入 `loop()`；核心坐标在 `packages/opencode/src/session/prompt.ts:162-188`。
-2. `createUserMessage()` 会主动读取文本文件、目录和 MCP resource，而不是把路径原样交给模型；核心坐标在 `packages/opencode/src/session/prompt.ts:998-1269`。
-3. plan/build reminder 很多情况下会直接通过 `Session.updatePart()` 落成 synthetic text part，因此它们是 durable state，不是临时内存注入。
+这个函数最重要的价值不是“方便命令模板”，而是让 `command()` 和普通 `prompt()` 最终落到同一种 part 体系上。
+
+---
+
+## 5. `file` part 的处理不是透传，而是一次内容编译
+
+`createUserMessage()` 里最重的一段就是 `1000-1269` 的 file part 分支。这里至少有 4 条子路径。
+
+### 5.1 MCP resource：先读资源，再补 synthetic text
+
+如果 `part.source.type === "resource"`，代码会：
+
+1. 先插一条 synthetic text，说明正在读取哪个 MCP resource。
+2. 调 `MCP.readResource(clientName, uri)`。
+3. 把返回的文本内容或二进制说明再转成 synthetic text。
+4. 最后再保留原始 `file` part。
+
+也就是说，MCP 资源不是单纯附件，而是会被编译成“对模型可读的上下文文本 + 文件元数据”。
+
+### 5.2 `data:text/plain`：直接解码进上下文
+
+如果是 `data:` URL 且 mime 为 `text/plain`，代码会：
+
+1. 写一条 synthetic text，模拟“调用了 Read tool，参数是哪个文件”。
+2. 把 data URL 解码后的纯文本写成第二条 synthetic text。
+3. 再保留原始 file part。
+
+这解释了为什么很多文本附件虽然看起来是 file part，实际进入模型上下文时已经被编译成可读文本。
+
+### 5.3 `file:` + `text/plain`：真的去跑一次 `ReadTool`
+
+如果是本地文本文件，`1095-1210` 会：
+
+1. 解析 URL 和可选行号范围。
+2. 必要时调用 `LSP.documentSymbol()` 修正 symbol range。
+3. 组出 `ReadTool` 参数 `{ filePath, offset, limit }`。
+4. 先写 synthetic text，记录“调用了 Read tool”。
+5. 真正执行 `ReadTool.execute(...)`。
+6. 把 `ReadTool` 的输出写成 synthetic text；若有附件则一并写入。
+
+因此，文本文件不是“等模型自己去读”，而是 prompt 阶段就被主动编译进 history 里。
+
+### 5.4 目录和二进制文件也会被特殊处理
+
+目录会走 `ReadTool` 的 listing 流程，见 `1213-1247`；二进制文件则会把真实内容读成 data URL 写回新的 file part，见 `1249-1268`。
+
+这意味着 user message 里的 file part，到了 durable history 中已经是“可以稳定回放的展开结果”，而不是一条脆弱的本地路径引用。
+
+---
+
+## 6. `agent` part 不是立即起子任务，而是编译成“调用 task 工具”的提示
+
+`1272-1294` 对 `agent` part 的处理非常关键：
+
+1. 原始 `agent` part 会保留。
+2. 额外插入一条 synthetic text，大意是：
+   - “用上面的消息和上下文生成 prompt，并调用 task 工具，subagent 是 X。”
+
+如果当前 agent 的 `task` 权限对这个 subagent 是 `deny`，还会追加一段 hint，说明这是用户显式调用的 agent。
+
+这里要特别注意：
+
+1. `@agent` 并不会在 `createUserMessage()` 里直接创建 child session。
+2. 真正的 subtask 执行发生在后面的 `loop()` 分支和 `TaskTool.execute()`。
+
+所以 `agent part` 的本质是**把用户的显式 agent 指令编译进 durable prompt**，而不是直接触发副作用。
+
+---
+
+## 7. 所有编译结果最终都被写成 durable part
+
+在 part 编译完成后，`1307-1355` 会：
+
+1. 触发 `Plugin.trigger("chat.message", ...)`，允许插件改写 message 和 parts。
+2. 对 message/part 做 schema 校验日志。
+3. 先 `Session.updateMessage(info)`。
+4. 再逐个 `Session.updatePart(part)`。
+
+写入顺序是先 message，后 parts。这样后续任何读取方都能以 `message -> parts` 的方式稳定 hydrate。
+
+这一步非常关键，因为它把“编译产物”真正变成了 runtime 真相源。
+
+---
+
+## 8. 这一步之后，user message 已经不再是“原始输入”
+
+经过 `createUserMessage()`，一条用户输入通常会被扩展成：
+
+1. 原始 text part
+2. 若干 synthetic text part
+3. file part
+4. agent part
+5. subtask part
+
+也就是说，数据库里的 user message 记录的不是“用户键入了什么”，而是“runtime 希望后续轮次如何理解这次输入”。
+
+这是 OpenCode 与很多“收到文本后直接喂模型”的 agent 实现最不一样的地方。
+
+---
+
+## 9. `prompt()` 的真正输出是什么
+
+从接口看，`prompt()` 最终返回的是 assistant message。但从 runtime 角度，它真正完成了两件事：
+
+1. 生成了一条 durable user message。
+2. 启动了下一阶段的 `loop()`。
+
+因此 A03 的终点不是“拿到模型输出”，而是“把原始输入编译成 durable history 的一部分”。A04 开始，才轮到 session 级调度器根据这条 history 决定下一步做什么。

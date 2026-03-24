@@ -1,62 +1,135 @@
-# OpenCode 源码深度解析 A04：第 2 步：`loop()` 决定下一轮，再把模型调用交给 `processor()`
+# OpenCode 源码深度解析 A04：`prompt`、`loop`、`processor` 的职责边界
 
-接在 A03 之后，`loop()` 与 `processor()` 分别承担不同层级的状态转换：前者负责 session 级调度，后者负责单轮流事件处理。
+很多介绍会把 OpenCode 说成“一个 loop + 一次模型调用”。这在概念上没错，但对源码分析是不够的。当前实现至少分成三层：`prompt()` 负责把输入编译成 durable user message，`loop()` 负责 session 级调度，`SessionProcessor.process()` 负责消费单轮模型流。
 
-## 一、分层坐标
+---
 
-| 主题 | 文件与代码行 | 职责 |
+## 1. 这三层分别解决什么问题
+
+| 层 | 代码坐标 | 真正职责 |
 | --- | --- | --- |
-| 并发状态表 | `packages/opencode/src/session/prompt.ts:69-92` | 用 `Instance.state()` 维护每个 session 的 `AbortController`。 |
-| `start/resume/cancel` | `packages/opencode/src/session/prompt.ts:242-272` | 决定本次是抢占新 loop、复用已有 loop，还是显式取消。 |
-| `loop()` 主体 | `packages/opencode/src/session/prompt.ts:278-736` | session 级状态机。 |
-| `SessionProcessor.create()` | `packages/opencode/src/session/processor.ts:27-46` | 创建一次 assistant 执行器，封装 toolcalls/snapshot/retry 状态。 |
-| `process()` 主体 | `packages/opencode/src/session/processor.ts:46-425` | 单轮 LLM 流消费器。 |
-| Processor 调用点 | `packages/opencode/src/session/prompt.ts:571-688` | `loop()` 创建 assistant message、resolve tools、组装 messages 后调用 processor。 |
+| `SessionPrompt.prompt()` | `packages/opencode/src/session/prompt.ts:162-188` | 把本次输入编译进 durable history，并触发后续调度。 |
+| `SessionPrompt.loop()` | `packages/opencode/src/session/prompt.ts:274-736` | 基于当前 session 历史判断下一轮该做什么：subtask、compaction，还是正常推理。 |
+| `SessionProcessor.process()` | `packages/opencode/src/session/processor.ts:46-425` | 对单次 `LLM.stream()` 流做事件级消费，把 reasoning/text/tool/step 写回 durable state。 |
 
-## 二、`loop()` 只做“下一步是什么”
+最重要的分界线是：
 
-`packages/opencode/src/session/prompt.ts:278-736` 的职责可以压成四个判断：
+1. `loop()` 决定 **要不要** 调模型，以及这一轮之前要先处理什么。
+2. `processor` 决定 **这一轮模型流里发生了什么**。
 
-1. `281-289` 先决定是新建 loop 还是挂到已有 loop 上；如果已有 loop 在跑，就把回调挂到 `state()[sessionID].callbacks`，而不是开第二条执行链。
-2. `302-329` 每轮从 `MessageV2.filterCompacted(MessageV2.stream(sessionID))` 重建现场，找 `lastUser`、`lastAssistant`、`lastFinished` 和待处理任务。
-3. `356-543` 如果存在 `subtask` 或 `compaction`，优先消费这些 durable parts。
-4. `561-724` 没有特殊任务时才进入正常模型推理，创建 `SessionProcessor` 并调用 `process()`。
+---
 
-因此 loop 是 session 级调度器，不处理 token 流，也不解析 provider 事件。
+## 2. `prompt()` 和 `loop()` 之间还有一层并发控制
 
-## 三、Processor 只做“这一轮流里发生了什么”
+`packages/opencode/src/session/prompt.ts:69-93` 定义了 `SessionPrompt` 的实例内状态：
 
-`packages/opencode/src/session/processor.ts:46-425` 的边界也很清晰：
+1. 每个 `sessionID` 对应一个 `AbortController`。
+2. 还有一个 callbacks 队列，用来挂住并发调用者。
 
-- `54` 调 `LLM.stream(streamInput)` 获取 provider 统一流。
-- `56-353` 遍历 `stream.fullStream`，把 `reasoning-*`、`text-*`、`tool-*`、`start-step`、`finish-step` 映射成 durable parts。
-- `354-387` 做错误分类、重试、上下文溢出判定。
-- `402-424` 在一轮结束时把未完成工具补成 error、落 assistant 完成时间，并向 loop 返回 `continue` / `compact` / `stop`。
+`start(sessionID)`、`resume(sessionID)`、`cancel(sessionID)` 在 `242-272`：
 
-Processor 不决定“要不要开 subtask”“要不要做 compaction user message”，这些都属于 loop 的职责。
+1. 新任务用 `start()` 占住 session。
+2. 已有任务恢复时走 `resume_existing`。
+3. 同时又来一个 `loop()` 调用时，不会重复执行，而是把 `resolve/reject` 挂到回调队列上。
 
-## 四、两层之间的真实交接点
+因此，OpenCode 对“同一个 session 同时多次 prompt”不是靠数据库锁解决的，而是靠 `SessionPrompt` 的进程内占位状态解决的。
 
-交接发生在 `packages/opencode/src/session/prompt.ts:571-688`：
+---
 
-1. `571-600` 先插入空 assistant message，固定 `parentID`、`agent`、`cwd/root`、`modelID/providerID`。
-2. `607-615` 根据 agent、session、model、历史消息计算可用工具。
-3. `617-625` 如果用户要求 `json_schema`，额外注入 `StructuredOutput` 工具。
-4. `653-665` 组 system prompt。
-5. `667-688` 把 `MessageV2.toModelMessages(msgs, model)` 的结果交给 processor。
+## 3. `loop()` 负责“下一轮做什么”
 
-这也是为什么 assistant 骨架能先落盘，而真正的 text/tool/reasoning parts 由 processor 逐步补齐。
+`loop()` 一进来就先做三件事：
 
-## 五、别把 subtask 和 compaction 说成“特殊工具”
+1. 占住 session 或复用已有 abort signal，见 `281-287`。
+2. 用 `defer(() => cancel(sessionID))` 保证最终释放忙碌状态，见 `289`。
+3. 初始化本轮临时状态，如 `structuredOutput`、`step`。
 
-它们是 loop 里的显式分支，不只是 processor 里某个 tool result：
+之后每一轮的固定流程是：
 
-- `packages/opencode/src/session/prompt.ts:356-529`：`subtask` part 会先新建一条 assistant message，再用 `TaskTool.execute()` 跑子任务，最后必要时补一条 synthetic user message，防止模型在下一轮缺失 user turn。
-- `packages/opencode/src/session/prompt.ts:533-543`：`compaction` part 直接交给 `SessionCompaction.process()`。
-- `packages/opencode/src/session/prompt.ts:546-559`：如果上一轮 token 已经接近上限，loop 会先创建 compaction user message，再下一轮处理。
+1. `MessageV2.filterCompacted(MessageV2.stream(sessionID))` 取当前可见历史，见 `302`。
+2. 从最新消息往前扫描，找出：
+   - `lastUser`
+   - `lastAssistant`
+   - `lastFinished`
+   - `tasks`
+3. 判断是否可以直接退出。
+4. 若不能退出，就根据 `tasks` 和 overflow 状态选择分支。
 
-## 六、结论
+也就是说，`loop()` 是 session 级调度器，不是 token 消费器。
 
-1. loop 是 session 级状态机，processor 是单轮流事件处理器。
-2. assistant message 骨架由 loop 创建，reasoning/text/tool/patch parts 由 processor 逐步补全。
-3. subtask、compaction、structured output 都是 loop 层的编排决策，不是 processor 随手附带的行为。
+---
+
+## 4. `processor` 负责“这一轮里发生了什么”
+
+`SessionProcessor.create()` 在 `27-45` 只接收四个输入：
+
+1. 已经落盘的 assistant 骨架 message
+2. sessionID
+3. 当前 model
+4. abort signal
+
+然后 `process(streamInput)` 做的事是：
+
+1. 调 `LLM.stream(streamInput)`，见 `54`。
+2. 按事件类型写 reasoning/text/tool/step/patch。
+3. 把 usage、cost、finish、error 写回 assistant message。
+4. 根据 retry/overflow/block/error 返回 `"continue" | "compact" | "stop"`。
+
+因此 `processor` 不读取全局历史、不决定 subtask/compaction 分支，也不决定下轮是否换 agent；它只解释当前这条模型流。
+
+---
+
+## 5. 三层之间的真实交接点
+
+当前主线的交接点非常明确：
+
+### 5.1 `prompt()` -> `loop()`
+
+`prompt()` 完成 durable user message 的写入后，直接 `return loop({ sessionID })`。这里的交接物不是原始输入字符串，而是**已经持久化的 message/parts**。
+
+### 5.2 `loop()` -> `processor`
+
+普通推理分支里，`loop()` 会先插入一条 assistant skeleton message，见 `571-600`，然后创建：
+
+1. `SessionProcessor`
+2. tool set
+3. system prompt
+4. model messages
+
+最后调用 `processor.process(...)`，见 `667-688`。
+
+### 5.3 `processor` -> `loop()`
+
+`processor.process()` 返回的不是文本，而是状态信号：
+
+1. `"continue"`：本轮正常完成，loop 再判断是否继续。
+2. `"compact"`：上下文太大，需要先创建 compaction 任务。
+3. `"stop"`：错误、拒绝、结构化输出失败等终止条件成立。
+
+这就是 OpenCode 把“调度决策”和“单轮执行”拆开的关键。
+
+---
+
+## 6. 哪些能力不属于这三层
+
+为了避免误把所有逻辑塞进 orchestrator，需要看清几个边界：
+
+1. **provider 绑定** 不在 `loop()` / `processor`，而在 `session/llm.ts`。
+2. **message -> model message 投影** 不在 `processor`，而在 `message-v2.ts`。
+3. **subagent 的 child session 创建** 真正落在 `tool/task.ts`。
+4. **compaction 的 summary 构造** 落在 `session/compaction.ts`。
+5. **permission/question 的 ask/reply** 分别落在 `permission/index.ts` 和 `question/index.ts`。
+
+所以 A04 的意义不是把所有逻辑装进“编排层”，而是明确编排层只负责**拼装和调度**。
+
+---
+
+## 7. 为什么这个分层很重要
+
+这套分层带来三个直接效果：
+
+1. `prompt()` 可以被 `message`、`command`、`task`、桌面端 UI 等不同入口复用。
+2. `loop()` 每轮只依赖 durable history，因此 session 可以恢复、fork、revert、compaction。
+3. `processor` 可以专注做事件级幂等写回，不需要知道入口来自 CLI、TUI 还是 ACP。
+
+下一篇 A05 会继续把 `loop()` 内部真正的分支展开讲透，尤其是 subtask、compaction 和 normal round 三条路径到底怎样落在代码里。
