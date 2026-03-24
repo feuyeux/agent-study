@@ -43,6 +43,8 @@ flowchart LR
 
 这张图对应 A 系列的完整主线：A01-A02 解释入口怎样进入 runtime，A03-A07 解释一次输入怎样被编译、调度、发给模型、写回 durable history，并重新成为下一轮判断依据。
 
+> **入口**：[A00-overview](./opencode_kickoff/A00-overview.md) 是 A 系列的总索引，按执行顺序整理了每篇的核心坐标和问题域。
+
 ## 三、执行主线
 
 1. CLI 从 `RunCommand.handler()` 进入，坐标在 `packages/opencode/src/cli/cmd/run.ts:306-675`。
@@ -137,6 +139,7 @@ subtask 写成 `subtask`/`tool` parts，compaction 写成 `compaction` user part
 
 ## 六、带着这些坐标读后续章节
 
+- **先读** [A00-overview](./opencode_kickoff/A00-overview.md)，它按执行顺序整理了 A01-A07 的问题域、核心坐标和每篇之间的关系。
 - A01 看 CLI 如何把外部输入编译成一次 `session.prompt` 请求，重点是 `run.ts:306-675`。
 - A02 看 Hono app 和 `/session` 路由如何进入 runtime，重点是 `server.ts:55-128`、`session.ts:781-919`。
 - A03-A07 按顺序看 `prompt -> loop -> processor -> llm -> durable writeback/replay` 这条编排链。
