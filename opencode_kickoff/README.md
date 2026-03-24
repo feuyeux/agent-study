@@ -1,6 +1,8 @@
 # OpenCode 源码深度解析 README
 
-本文档基于 `opencode` 当前工作树快照 `eb3bfffad`（`HEAD (no branch)`）编写，目标不是复述 README，而是把当前这份代码到底怎样组织、怎样执行、怎样持久化说清楚。
+> 本文档基于 `opencode`  `v1.3.0`编写，目标是把当前这份代码到底怎样组织、怎样执行、怎样持久化说清楚。
+
+![](OpenCode_Architecture.png)
 
 ---
 
