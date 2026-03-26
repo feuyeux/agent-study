@@ -1,12 +1,14 @@
 # OpenCode 源码深度解析 A03：`SessionPrompt.prompt()` 如何把用户输入编译成 durable user message
 
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
 从这一篇开始，正式进入 session runtime。OpenCode 的第一步并不是直接调模型，而是先把用户输入编译成一条 durable user message，再把各种输入附件和指令展开成若干 part。后续所有编排、回放、fork、revert 都建立在这一步产出的结构上。
 
 ---
 
-## 1. `prompt()` 自己做的事其实很少，但顺序非常关键
+## 1. `prompt()` 主流程很短，但顺序非常关键
 
-`packages/opencode/src/session/prompt.ts:162-188` 的 `prompt()` 只有三段：
+`packages/opencode/src/session/prompt.ts:162-188` 的 `prompt()` 主流程很短，但中间还夹着一段兼容旧 `tools` 参数的补丁逻辑：
 
 1. `Session.get()` 取 session。
 2. `SessionRevert.cleanup(session)` 清理尚未提交的 revert 状态。
@@ -46,7 +48,7 @@
 
 ## 3. 编译第一步：先选定这条 user message 的 agent/model/variant
 
-`createUserMessage()` 在 `966-989` 先组装 `MessageV2.User` 头信息：
+`createUserMessage()` 在 `986-1021` 先组装 `MessageV2.User` 头信息：
 
 1. agent：优先 `input.agent`，否则取默认 agent。
 2. model：优先 `input.model`，否则 `agent.model`，再否则 `lastModel(sessionID)`。

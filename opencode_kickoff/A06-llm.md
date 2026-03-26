@@ -1,6 +1,8 @@
 # OpenCode 源码深度解析 A06：沿着 `processor()` 进入 `LLM.stream()`，看模型请求怎样发出去
 
-到了 A06，真正的模型调用才开始出现。当前实现里，大模型请求不是 `processor` 里随手拼个 payload 发出去，而是经过了 system prompt 选择、环境注入、指令文件加载、tool set 包装、provider 参数合并、兼容补丁和 AI SDK middleware 多层处理。
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
+到了 A06，真正的模型调用才开始出现。在 `v1.3.2` 中，大模型请求不是 `processor` 里随手拼个 payload 发出去，而是经过了 system prompt 选择、环境注入、指令文件加载、tool set 包装、provider 参数合并、兼容补丁和 AI SDK middleware 多层处理。
 
 ---
 
@@ -11,7 +13,7 @@
 | 环节 | 代码坐标 | 作用 |
 | --- | --- | --- |
 | `processor -> llm` 交接 | `packages/opencode/src/session/processor.ts:46-56` | 单轮执行开始，调用 `LLM.stream()`。 |
-| system prompt 组装 | `packages/opencode/src/session/prompt.ts:655-665`、`session/system.ts:17-67`、`session/instruction.ts:72-191` | provider prompt、环境信息、技能、AGENTS/CLAUDE 指令等被合并。 |
+| system prompt 组装 | `packages/opencode/src/session/prompt.ts:675-685`、`session/system.ts:17-67`、`session/instruction.ts:72-191` | provider prompt、环境信息、技能、AGENTS/CLAUDE 指令等被合并。 |
 | provider/tool/params 绑定 | `packages/opencode/src/session/llm.ts:48-285` | 选择 language model、参数、headers、tools，并最终调用 `streamText()`。 |
 | provider 适配 | `packages/opencode/src/provider/provider.ts:1319-1487` | `getProvider`、`getModel`、`getLanguage`、`defaultModel`、`parseModel`。 |
 
@@ -19,11 +21,11 @@
 
 ## 2. system prompt 不是一坨字符串，而是四层来源的叠加
 
-当前实现里，system prompt 分两段生成。
+在 `v1.3.2` 中，system prompt 分两段生成。
 
 ### 2.1 `prompt.ts` 先准备“运行时上下文层”
 
-普通推理分支里，`655-665` 会先拼出：
+普通推理分支里，`675-685` 会先拼出：
 
 1. `SystemPrompt.environment(model)`：环境信息，见 `session/system.ts:28-53`
 2. `SystemPrompt.skills(agent)`：技能目录和说明，见 `55-67`
@@ -117,7 +119,7 @@
 
 ### 6.1 第一层：`prompt.ts` 把本地工具、插件工具、MCP 工具都包装成 AI SDK Tool
 
-`SessionPrompt.resolveTools()` 在 `746-934` 里会：
+`SessionPrompt.resolveTools()` 在 `766-953` 里会：
 
 1. 从 `ToolRegistry.tools(...)` 取到可用工具定义。
 2. 用 `ProviderTransform.schema()` 做 schema 适配。
@@ -132,7 +134,7 @@
 
 ### 6.2 第二层：`llm.ts` 再按权限裁一次
 
-`session/llm.ts:288-299` 会根据：
+`session/llm.ts:296-307` 会根据：
 
 1. agent permission
 2. session permission
@@ -185,7 +187,7 @@
 
 ## 8. 最后一步：`streamText()` 之前还有 middleware
 
-`264-277` 用 `wrapLanguageModel()` 包了一层 middleware。唯一的 middleware 会在 stream 请求时：
+`272-285` 用 `wrapLanguageModel()` 包了一层 middleware。唯一的 middleware 会在 stream 请求时：
 
 1. 取到 `args.params.prompt`
 2. 再用 `ProviderTransform.message(...)` 做 provider-specific prompt 转换
@@ -198,7 +200,7 @@
 
 ## 9. `streamText()` 调用时最终带上了什么
 
-`216-285` 里最终传给 `streamText()` 的关键字段有：
+`220-293` 里最终传给 `streamText()` 的关键字段有：
 
 1. `temperature/topP/topK`
 2. `providerOptions`

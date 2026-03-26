@@ -1,6 +1,8 @@
 # OpenCode 断点调试指南
 
-> 本文是面向 `packages/opencode` 的源码调试。当前仓库里真正的 CLI 入口是 `packages/opencode/src/index.ts`；根目录 `package.json` 里的 `dev` 脚本，本质上也是从这里启动。
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
+本文面向 `packages/opencode` 的源码调试，当前仓库里真正的 CLI 入口是 `packages/opencode/src/index.ts`；根目录 `package.json` 里的 `dev` 脚本，本质上也是从这里启动。
 
 ## 调试前准备
 

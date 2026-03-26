@@ -1,20 +1,22 @@
 # OpenCode 深度专题 B02：上下文工程，从输入重写到模型消息投影
 
-OpenCode 当前实现里，“上下文工程”不是在 prompt 前拼几段字符串，而是贯穿输入编译、指令发现、工具权限裁剪、历史投影和 provider 兼容的一整条链。B02 的任务就是把这条链拆清楚。
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
+在 `v1.3.2` 中，OpenCode 的“上下文工程”不是在 prompt 前拼几段字符串，而是贯穿输入编译、指令发现、工具权限裁剪、历史投影和 provider 兼容的一整条链。B02 的任务就是把这条链拆清楚。
 
 ---
 
 ## 1. 上下文源头不是一层，而是多层叠加
 
-当前代码里，送进模型的上下文主要来自 6 个来源：
+在 `v1.3.2` 中，送进模型的上下文主要来自 6 个来源：
 
 | 来源 | 代码坐标 | 在哪一层进入 |
 | --- | --- | --- |
-| 用户原始输入 | `session/prompt.ts:998-1305` | `createUserMessage()` 编译 part |
-| 文件/MCP/agent 附件展开 | `prompt.ts:1000-1294` | 仍属于 user message 编译阶段 |
+| 用户原始输入 | `session/prompt.ts:986-1386` | `createUserMessage()` 编译 part |
+| 文件/MCP/agent 附件展开 | `prompt.ts:1000-1325` | 仍属于 user message 编译阶段 |
 | provider/agent 基础提示 | `session/system.ts:18-26`、`session/llm.ts:70-82` | `LLM.stream()` 组 system |
-| 环境/技能/指令文件 | `system.ts:28-67`、`instruction.ts:72-142` | `prompt.ts:655-665` |
-| 运行时提醒 | `prompt.ts:1358-1496`、`634-650` | `insertReminders()` 与 queued user reminder |
+| 环境/技能/指令文件 | `system.ts:28-67`、`instruction.ts:72-142` | `prompt.ts:675-685` |
+| 运行时提醒 | `prompt.ts:1389-1527`、`655-668` | `insertReminders()` 与 queued user reminder |
 | durable history 投影 | `message-v2.ts:559-792` | `toModelMessages()` |
 
 因此 OpenCode 的上下文不是“message string + system string”，而是一份 runtime 编译产物。
@@ -36,7 +38,7 @@ OpenCode 当前实现里，“上下文工程”不是在 prompt 前拼几段字
 
 ### 2.2 `@agent` 也会被改写成上下文提示
 
-`1272-1294` 不直接执行子任务，而是写入一条 synthetic text，明确告诉模型：
+`1303-1325` 不直接执行子任务，而是写入一条 synthetic text，明确告诉模型：
 
 1. 上面那段上下文要被拿去生成 subtask prompt
 2. 应调用 `task` 工具
@@ -59,7 +61,7 @@ OpenCode 当前实现里，“上下文工程”不是在 prompt 前拼几段字
 3. `~/.claude/CLAUDE.md`
 4. `config.instructions` 里声明的额外本地文件和 URL
 
-这些内容会在每轮 `prompt.ts:655-665` 拼进 system prompt。
+这些内容会在每轮 `prompt.ts:675-685` 拼进 system prompt。
 
 ### 3.2 read tool 触发的局部指令发现
 
@@ -77,7 +79,7 @@ OpenCode 当前实现里，“上下文工程”不是在 prompt 前拼几段字
 
 ## 4. system prompt 的真实组装顺序
 
-普通推理分支里，`prompt.ts:655-665` 先准备好：
+普通推理分支里，`prompt.ts:675-685` 先准备好：
 
 1. 环境 prompt
 2. 技能说明
@@ -105,7 +107,7 @@ OpenCode 当前实现里，“上下文工程”不是在 prompt 前拼几段字
 
 ### 5.1 plan/build reminder
 
-`prompt.ts:1358-1496` 会根据当前 agent、上轮 agent 和实验 flag：
+`prompt.ts:1389-1527` 会根据当前 agent、上轮 agent 和实验 flag：
 
 1. 给 `plan` agent 注入 plan mode 限制说明
 2. 从 `plan` 切回 `build` 时插入 build-switch 提醒
@@ -115,7 +117,7 @@ OpenCode 当前实现里，“上下文工程”不是在 prompt 前拼几段字
 
 ### 5.2 queued user message reminder
 
-`634-650` 会把上轮 assistant 之后插入的新 user 文本临时包成 `<system-reminder>`，提醒模型优先处理后来的消息。
+`655-668` 会把上轮 assistant 之后插入的新 user 文本临时包成 `<system-reminder>`，提醒模型优先处理后来的消息。
 
 这一步不回写数据库，但会影响本轮模型感知到的对话顺序和优先级。
 
@@ -170,7 +172,7 @@ OpenCode 当前的工具上下文有两层裁剪：
 
 ## 8. B02 的核心结论
 
-当前实现里，“上下文工程”至少包含三层编译：
+在 `v1.3.2` 中，“上下文工程”至少包含三层编译：
 
 1. **输入编译**：把原始输入、附件、agent 指令写成 durable user message/parts。
 2. **system 编译**：把 provider prompt、环境、技能、AGENTS/CLAUDE、运行时提醒拼成最终 system。

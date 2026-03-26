@@ -1,5 +1,7 @@
 # OpenCode 源码深度解析 A02：Server 与路由边界
 
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
 入口层之后，所有请求都会遇到同一个问题：怎样从一个 CLI/TUI/桌面/Web 入口，进入到当前工作目录、当前 workspace、当前 project 对应的 session runtime。这个边界就落在 `packages/opencode/src/server/server.ts` 和 `server/routes/*` 上。
 
 ---
@@ -75,7 +77,7 @@
 
 ## 4. `/session` 路由不只是 “send message”
 
-`packages/opencode/src/server/routes/session.ts:25-1023` 比一般聊天服务要厚很多，它至少覆盖了：
+`packages/opencode/src/server/routes/session.ts:27-1031` 比一般聊天服务要厚很多，它至少覆盖了：
 
 ### 4.1 session 生命周期
 
@@ -126,7 +128,7 @@
 
 ---
 
-## 6. 当前代码里的事件作用域有两层
+## 6. `v1.3.2` 的事件作用域有两层
 
 ### 6.1 `GET /event`
 

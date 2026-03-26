@@ -1,5 +1,7 @@
 # OpenCode 源码深度解析 A07：模型流返回后，message/part 怎样写回 Durable State 并被重新读出
 
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
 A06 解决了“请求怎样发出去”，A07 解决的是更关键的问题：模型流回来以后，OpenCode 怎样把它拆成 durable parts，怎样保证“先写库、再发事件”，以及前端/下一轮 loop 又怎样把这些历史重新投影回去。
 
 ---
@@ -25,7 +27,7 @@ A06 解决了“请求怎样发出去”，A07 解决的是更关键的问题：
 
 ## 2. `processor` 如何把模型流拆成 part
 
-`packages/opencode/src/session/processor.ts:56-351` 是真正的事件分发器。当前实现里最重要的事件分类如下。
+`packages/opencode/src/session/processor.ts:56-351` 是真正的事件分发器。在 `v1.3.2` 中，最重要的事件分类如下。
 
 ### 2.1 reasoning 事件
 

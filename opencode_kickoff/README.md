@@ -1,6 +1,6 @@
 # OpenCode 源码深度解析 README
 
-> 本文档基于 `opencode`  `v1.3.0`编写，目标是把当前这份代码到底怎样组织、怎样执行、怎样持久化说清楚。
+> 本文档基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对；文中涉及的文件路径、方法名与代码行均以该版本为准。目标是把这份代码到底怎样组织、怎样执行、怎样持久化说清楚。
 
 ![](OpenCode_Architecture.png)
 
@@ -16,7 +16,8 @@
 | `packages/app` | 通用图形前端，走 SDK 调后端。 | 用于说明桌面壳和 UI 如何接到同一套 HTTP/SSE 协议上。 |
 | `packages/desktop` | Tauri 桌面壳，负责拉起 sidecar、管理本地配置、承载 `@opencode-ai/app`。 | A01 的桌面入口。 |
 | `packages/desktop-electron` | Electron 桌面壳，职责与 Tauri 版本类似。 | A01 的另一条桌面入口。 |
-| `packages/web` | Astro 文档/官网站点。 | **不是** `opencode web` 命令背后的本地 runtime UI。 |
+| `packages/web` | 公开站点/文档站点的 Web 壳与页面路由。 | **不是** `opencode web` 命令背后的本地 runtime UI。 |
+| `packages/docs` | 文档正文、图片与 snippets 等内容源。 | 用于区分“文档内容仓”和 `packages/web` 这层站点壳。 |
 | `packages/plugin` / `packages/sdk/js` / `packages/ui` | 插件、SDK、通用 UI。 | B02/B05/B06 讨论扩展点时会带到。 |
 
 因此，这套文档的分析重心是：

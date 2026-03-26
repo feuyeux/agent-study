@@ -1,12 +1,14 @@
 # OpenCode 深度专题 B06：设计哲学，固定骨架与晚绑定策略
 
-读完整个工程后，可以把 OpenCode 当前实现的设计哲学概括成一句话：**核心骨架非常固定，扩展点尽量后置。** 这也是为什么它既不像死板的单一 prompt 脚本，也不像一个完全开放的 workflow engine。
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
+读完整个工程后，可以把 `v1.3.2` 的 OpenCode 设计哲学概括成一句话：**核心骨架非常固定，扩展点尽量后置。** 这也是为什么它既不像死板的单一 prompt 脚本，也不像一个完全开放的 workflow engine。
 
 ---
 
 ## 1. 固定骨架到底固定在哪
 
-当前代码里真正“很难被改形”的骨架主要有这几段：
+在 `v1.3.2` 中，真正“很难被改形”的骨架主要有这几段：
 
 1. `prompt()` 先把输入编译成 durable user message
 2. `loop()` 每轮从 durable history 重新求状态
@@ -23,7 +25,7 @@
 4. `session/index.ts`
 5. `session/message-v2.ts`
 
-也就是说，OpenCode 当前不是通过可配置图编排执行流程，而是通过一条固定 runtime pipeline 运行。
+也就是说，`v1.3.2` 的 OpenCode 不是通过可配置图编排执行流程，而是通过一条固定 runtime pipeline 运行。
 
 ---
 
@@ -82,7 +84,7 @@
 
 ## 3. 为什么它不是一个“高度可配的工作流引擎”
 
-当前实现里，有几个设计选择明确说明它不想变成通用 workflow engine。
+在 `v1.3.2` 中，有几个设计选择明确说明它不想变成通用 workflow engine。
 
 ### 3.1 分支种类是写死的
 

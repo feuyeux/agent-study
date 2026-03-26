@@ -1,107 +1,188 @@
 # OpenCode 核心构建物启动与调试指南
 
-在 `opencode` 项目中采用了极具现代化的 Monorepo 和多端（Headless API、TUI、Web、Desktop）混合架构。通过一套底层的 Server 与 Event Bus，支撑起了多形态的应用。
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 
-> **核心前提与常见依赖问题避坑**：
-> 1. **根目录执行**：请确保你的终端当前工作路径位于整个项目的根目录 `/opencode`。虽然部分框架支持切换目录执行，但大部分脚本的预设挂载均基于项目根部。
-> 2. **包管理器使用**：全工程**仅且强依赖 [Bun](https://bun.sh) (`v1.3.10+`)**。切勿在该目录使用 `npmi`/`pnpm`/`yarn`。
-> 3. **首次环境依赖处理**：必须**完整执行一次 `bun install`**，以此触发 Bun 的 catalog workspace 自动关联过程，否则部分包（如 `@opencode-ai/sdk`）与互相依赖关系无法生效。
-> 4. **macOS 权限避坑**：在启动基于 Tauri 的应用程序时，偶尔可能出现缓存/执行临时目录缺乏写权限导致的 `PermissionDenied`。临时可利用覆盖环境变量重定向的方式解决（例如：`TMPDIR=/tmp bun run dev:desktop`）。
+## 1. 先确认运行前提
+
+根目录 `package.json` 明确了当前工作区的基础前提：
+
+1. 包管理器与运行时是 `bun@1.3.11`。
+2. 根脚本负责把命令分发到各个包，不存在统一的根级 `test`。
+3. 如果你刚切到 `v1.3.2`，应先在仓库根目录执行一次 `bun install`，避免 workspace 依赖和补丁包不匹配。
+
+推荐先做：
+
+```bash
+cd /path/to/opencode
+bun install
+```
+
+需要注意两点：
+
+1. 根目录的 `test` 脚本故意直接失败，提示你不要从根目录跑测试。
+2. 真正的类型检查、测试、开发命令要么走根分发脚本，要么进入具体 package 执行。
 
 ---
 
-## 1. 核心底座引擎 (Core Services)
+## 2. 根目录最常用的启动命令
 
-### API Server (无头服务端)
-这是支持 CLI、Web 端、桌面端客户端均能以正常工作流流转的底层基座，用于接管大模型网络收发和事件广播流。
+根目录 `package.json` 里与开发最相关的脚本如下：
+
+| 命令 | 实际作用 |
+| --- | --- |
+| `bun dev` | 进入 `packages/opencode/src/index.ts`，默认触发 `$0 [project]`，也就是 TUI 入口。 |
+| `bun dev serve` | 走同一个 CLI 入口，但执行 `serve` 子命令。 |
+| `bun dev web` | 走同一个 CLI 入口，但执行 `web` 子命令。 |
+| `bun dev attach <url>` | 走同一个 CLI 入口，但执行 `attach` 子命令。 |
+| `bun run dev:web` | 启动 `packages/app`。 |
+| `bun run dev:desktop` | 启动 Tauri 桌面壳。 |
+| `bun run dev:console` | 启动控制台前端。 |
+| `bun run dev:storybook` | 启动 Storybook。 |
+| `bun run typecheck` | 通过 `bun turbo typecheck` 做工作区级类型检查。 |
+
+如果你只关心 agent runtime，本质上最重要的根脚本只有一个：
+
 ```bash
-# 默认开启 headless Server。bun dev 是跑根部的 script
-bun dev serve               
-
-# 也可以直接针对特定路径
-bun run --cwd packages/opencode src/index.ts serve --port 8080
+bun run --cwd packages/opencode --conditions=browser src/index.ts
 ```
+
+根目录的 `bun dev ...` 只是把参数透传给它。
 
 ---
 
-## 2. 交互终端与命令行 (CLI & TUI)
+## 3. `packages/opencode` 运行时怎么启动
 
-作为原生的 Agent 互动手段，CLI 可以直接在你的目前 Shell 工作区拉起一个极速的 Solid.js + opentui 组件化的终端界面。
+### 3.1 默认 TUI
 
-### 启动完整的本端终端应用 (自动拉起 Worker Server)
-默认命令在启动本端终端界面（TUI）的同时，还会在后台自动构建并挂起支持 RPC 的 API 服务：
+默认命令对应 `cli/cmd/tui/thread.ts` 的 `$0 [project]`：
+
 ```bash
-bun dev          # 默认拉起交互终端 TUI 模式，接管默认项目路径
-bun dev .        # 指定以操作该项目根目录的形式启动 TUI
-bun dev <PATH>   # 指明一个特定的工作区以启动
+bun dev
+bun dev .
+bun dev /absolute/path/to/project
 ```
 
-### 接入已启动服务器模式 (Attach)
-脱离内置环境，将本地的终端直接接管到远端或预启动的 Server 上：
+常见附加参数也都来自这个入口：
+
 ```bash
-bun dev attach <HTTP_SERVER_URL>
+bun dev . --model openai/gpt-5
+bun dev . --agent build
+bun dev . --continue
+bun dev . --session <session-id>
+bun dev . --fork
 ```
+
+### 3.2 一次性 CLI
+
+`run` 子命令适合非交互式调用：
+
+```bash
+bun dev run "summarize this repository"
+bun dev run "fix lint" --agent build
+```
+
+### 3.3 Headless Server
+
+`serve` 子命令启动纯 HTTP server：
+
+```bash
+bun dev serve
+bun dev serve --port 8080
+bun dev serve --hostname 0.0.0.0 --port 4096
+```
+
+`v1.3.2` 的网络参数默认值来自 `src/cli/network.ts`：
+
+1. `hostname` 默认是 `127.0.0.1`
+2. `port` 默认是 `0`
+3. `mdns` 默认是 `false`
+
+而 `Server.listen()` 的实现会在 `port=0` 时优先尝试 `4096`，失败后再退回系统随机端口。
+
+如果要暴露给其他机器访问，至少需要考虑两件事：
+
+1. `--hostname 0.0.0.0`
+2. 设置 `OPENCODE_SERVER_PASSWORD`
+
+### 3.4 Web 模式
+
+`web` 子命令会先起本地 server，再尝试打开浏览器：
+
+```bash
+bun dev web
+bun dev web --port 4096
+```
+
+这里本地跑起来的是 `Server.listen()`；未知路径由 server 兜底代理到 `https://app.opencode.ai`。
+
+### 3.5 Attach 模式
+
+`attach <url>` 用于让本地 TUI 接远端或预启动 server：
+
+```bash
+bun dev attach http://localhost:4096
+bun dev attach http://127.0.0.1:4096 --password <server-password>
+```
+
+它支持 `--continue`、`--session`、`--fork`，本质上还是在消费同一套 server API 和 SSE。
 
 ---
 
-## 3. 面向原生桌面客户端 (Desktop Clients)
+## 4. 直接在包目录执行的常用命令
 
-借由完全独立的前后端架构拆分，同样的 Agent 能力也可以被内嵌到系统原生窗口（Tauri 或 Electron）中。
+如果你不想经过根分发脚本，可以直接进入包目录。
 
-### 3.1 基于 Tauri 架构 (当前主线态)
-采用底层 Rust 捆绑侧伴（Sidecar），资源利用率高且启动快，必须要在宿主机拥有 Rust 工具链：
+### 4.1 运行时包
+
 ```bash
-# 本地原生桌面调试进程拉起 (同时拉起内嵌包的 localhost 端口页面)
-bun run dev:desktop
-# 也可以显式：bun run --cwd packages/desktop tauri dev
+cd packages/opencode
+bun run dev
+bun run typecheck
+bun run test
 ```
 
-### 3.2 基于 Electron 架构 (传统的备选兼容分支)
-采用传统的全量 Chromium + NodeJS Main 进程托管，主要走一套与 Tauri 全然不同的发布包管理规范。
+对应关系是：
+
+1. `dev` 直接执行 `./src/index.ts`
+2. `typecheck` 是 `tsgo --noEmit`
+3. `test` 是 `bun test --timeout 30000`
+
+### 4.2 前端与桌面壳
+
 ```bash
-bun run --cwd packages/desktop-electron dev
+cd packages/app
+bun run dev
+
+cd packages/desktop
+bun run tauri dev
+
+cd packages/desktop-electron
+bun run dev
 ```
 
----
+### 4.3 其他常用前端包
 
-## 4. 前端应用界面展现层 (Web Applications)
-
-通过 Vite 强力打包呈现的交互界面层（这同时也是桌面版本背后的那套前端 UI 展示引擎）。
-
-### Core Web APP (`packages/app`)
-这个包承载着最复杂的 UI 交互业务，能通过独立端口在普通的现代浏览器打开。
-**注意：单独启动前端通常不可脱离 API Server。**
 ```bash
 bun run dev:web
-# 在浏览器端开启服务，通常监听 http://localhost:5173 
-```
-
----
-
-## 5. 云管控与生态集成周边 (Ecosystem & Tooling)
-
-### 控制台前台 (Web Console)
-面对云端和多账户环境管理的入口（涉及部署态时的登录身份映射）：
-```bash
 bun run dev:console
-# 注意内置指令已经针对类 unix 平台包含了 ulimit 拓频防爆逻辑
+bun run dev:storybook
+
+cd packages/web
+bun run dev
 ```
 
-### Storybook (核心组件沙盒)
-专门供前端开发独立演进和调试无业务侧杂项干扰的可视化 UI 库测试平台。
-```bash
-bun run dev:storybook
-```
+其中：
+
+1. `packages/app` 是本地 agent UI 会复用的前端应用。
+2. `packages/web` 是公开站点/文档站点。
+3. `packages/console/app` 是控制台前端。
 
 ---
 
-## 🌟 高级开发：后端运行时调优介入 (Inspector Debugger)
+## 5. 与启动相关的几个实用判断
 
-作为大量的异步、`yield` 事件流与 Agent State 混杂的系统工程，纯靠 `console.log` 会非常吃力，并且常规的 `bun dev` 在拉起 Worker 时会干扰到默认断点的捕捉。
-
-**最佳服务进程联调方式**：以显式挂放 Inspector 及端口的方式剥离启动 Core Server。
-
-```bash
-bun run --inspect=ws://localhost:6499/ --cwd packages/opencode src/index.ts serve --port 4096
-```
-> 完成绑定后，就可以任意地接管或向 HTTP 端口发动 Session Post 接口，并确保你在诸如特定工具的 SandBox API (如 `TaskTool.execute`) 或 LLM SDK Adapter `transform.ts` 之处设下的每一处断住。
+1. 想看 agent 主链路，用 `bun dev` 或 `bun dev run ...`。
+2. 想看纯 server 行为，用 `bun dev serve`。
+3. 想看浏览器端连接本地 runtime，用 `bun dev web`。
+4. 想看桌面 sidecar 与前端结合，用 `bun run dev:desktop` 或 Electron 包。
+5. 想跑校验，不要在根目录跑 `test`，而是进入具体 package。

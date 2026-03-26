@@ -1,5 +1,7 @@
 # OpenCode 深度专题 B05：基础设施，SQLite、Storage、Bus、Instance 与事件投影
 
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
 如果不看基础设施，很容易把 OpenCode 理解成“一个内存态 agent，顺手把历史写数据库”。当前实现恰好相反：数据库、实例作用域、事件总线和 SSE 投影本来就是 runtime 骨架的一部分。
 
 ---

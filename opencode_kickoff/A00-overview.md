@@ -1,5 +1,7 @@
 # A 系列索引：OpenCode 执行主线深度解析
 
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
 本系列基于 `packages/opencode` 当前实现，按**真实调用顺序**解开一次请求的生命周期：入口如何进入 Server，Server 如何进入 session runtime，runtime 怎样把用户输入编译成 durable message，再怎样循环驱动模型、工具和写回。
 
 ---

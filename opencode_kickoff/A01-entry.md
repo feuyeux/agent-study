@@ -1,6 +1,8 @@
 # OpenCode 源码深度解析 A01：多端入口与传输适配
 
-讨论 OpenCode 的入口层，不能只盯着 `run` 命令。当前代码里至少有 7 类入口：默认 TUI、一次性 `run`、`attach`、`serve`、`web`、`acp`、桌面 sidecar。它们的 UI 形态不同，但真正重要的是它们怎样收束到同一个 HTTP/session 协议上。
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
+讨论 OpenCode 的入口层，不能只盯着 `run` 命令。在 `v1.3.2` 中，至少有 7 类入口：默认 TUI、一次性 `run`、`attach`、`serve`、`web`、`acp`、桌面 sidecar。它们的 UI 形态不同，但真正重要的是它们怎样收束到同一个 HTTP/session 协议上。
 
 ---
 
@@ -8,13 +10,13 @@
 
 | 入口 | 代码坐标 | 传输方式 | 最后进入哪里 |
 | --- | --- | --- | --- |
-| 默认 TUI (`opencode`) | `packages/opencode/src/index.ts:126-151`、`cli/cmd/tui/thread.ts:65-225` | 本地 worker RPC，必要时也可起外部 HTTP server | 同一套 `Server.fetch()` / `/event` 协议 |
+| 默认 TUI (`opencode`) | `packages/opencode/src/index.ts:126-151`、`cli/cmd/tui/thread.ts:66-231` | 本地 worker RPC，必要时也可起外部 HTTP server | 同一套 `Server.fetch()` / `/event` 协议 |
 | 一次性 `run` | `cli/cmd/run.ts:221-675` | 本地 in-process fetch 或远端 HTTP attach | `session.prompt` / `session.command` |
 | `attach <url>` | `cli/cmd/tui/attach.ts:9-88` | 远端 HTTP + SSE | 远端 server 的 `/session`、`/event` |
 | `serve` | `cli/cmd/serve.ts:9-23` | 纯 HTTP server | `Server.listen()` |
 | `web` | `cli/cmd/web.ts:31-80` | 本地 HTTP server，再打开浏览器 | `Server.listen()`，未知路径代理到 `app.opencode.ai` |
 | `acp` | `cli/cmd/acp.ts:12-69`、`acp/agent.ts` | stdin/stdout NDJSON + 本地 HTTP SDK | 同一套 `/session`、`/permission`、`/event` |
-| 桌面端 | `packages/desktop/src/index.tsx:419-442`、`packages/desktop-electron/src/main/server.ts:32-58` | sidecar server + `@opencode-ai/app` | 同一套 HTTP/SSE server 连接 |
+| 桌面端 | `packages/desktop/src/index.tsx:432-458`、`packages/desktop-electron/src/main/server.ts:32-57` | sidecar server + `@opencode-ai/app` | 同一套 HTTP/SSE server 连接 |
 
 结论先说在前面：**OpenCode 没有多套 runtime，只有多套 transport 和宿主。**
 
@@ -70,7 +72,7 @@ const fetchFn = async (input, init) => Server.Default().fetch(new Request(input,
 
 ### 3.4 attach 模式才走真实远端 HTTP
 
-`655-665` 会用 `createOpencodeClient({ baseUrl, headers })` 连到远端 server，并带上 basic auth。
+`655-664` 会用 `createOpencodeClient({ baseUrl, headers })` 连到远端 server，并带上 basic auth。
 
 因此 `run` 的核心不是“直接调用 runtime 函数”，而是“用 SDK 发 session 协议请求”，只是这个协议既可以指向内存里的 server，也可以指向远端 server。
 
@@ -78,17 +80,17 @@ const fetchFn = async (input, init) => Server.Default().fetch(new Request(input,
 
 ## 4. 默认 TUI 入口：transport 抽象比 `run` 更厚一层
 
-默认命令其实不是 `run`，而是 `TuiThreadCommand`，位于 `packages/opencode/src/cli/cmd/tui/thread.ts:65-225`。
+默认命令其实不是 `run`，而是 `TuiThreadCommand`，位于 `packages/opencode/src/cli/cmd/tui/thread.ts:66-231`。
 
 这一层的关键不是 UI，而是它把“本地 worker 模式”和“外部 server 模式”统一成同一套前端依赖：
 
 ### 4.1 TUI 主线程不直接碰 runtime
 
-`131-167` 会先启动 `Worker`，通过 `Rpc.client()` 与 worker 通信。
+`132-169` 会先启动 `Worker`，通过 `Rpc.client()` 与 worker 通信。
 
 ### 4.2 worker 暴露两类能力
 
-`packages/opencode/src/cli/cmd/tui/worker.ts:100-149` 暴露了：
+`packages/opencode/src/cli/cmd/tui/worker.ts:101-151` 暴露了：
 
 1. `fetch`：把任意 HTTP 请求转发给 `Server.Default().fetch()`。
 2. `event`：把本地 `/event` 订阅转成 RPC 事件。
@@ -101,7 +103,7 @@ const fetchFn = async (input, init) => Server.Default().fetch(new Request(input,
 
 ### 4.3 UI 自己并不知道后面是本地还是远端
 
-`thread.ts:185-215` 最终只把 `{ url, fetch, events }` 交给 `tui()`。`tui()` 消费的是抽象后的 SDK provider，而不是某个 runtime 单例。
+`thread.ts:186-223` 最终只把 `{ url, fetch, events }` 交给 `tui()`。`tui()` 消费的是抽象后的 SDK provider，而不是某个 runtime 单例。
 
 这就是 OpenCode TUI 的一个核心设计：**UI 永远只面对 session 协议，不面对 session 实现。**
 
@@ -147,7 +149,7 @@ const fetchFn = async (input, init) => Server.Default().fetch(new Request(input,
 
 真正容易被误写的是后半句：浏览器里看到的 UI **不是本地 `packages/web`**。
 
-### 6.3 当前代码里，未知路径会代理到 `https://app.opencode.ai`
+### 6.3 在 `v1.3.2` 中，未知路径会代理到 `https://app.opencode.ai`
 
 `packages/opencode/src/server/server.ts:499-514` 的兜底路由会把任意未命中的路径代理到 `app.opencode.ai`，并重写 CSP。
 
@@ -186,15 +188,15 @@ const fetchFn = async (input, init) => Server.Default().fetch(new Request(input,
 
 ### 8.1 Tauri 版
 
-Tauri 前端在 `packages/desktop/src/index.tsx:419-442` 通过 `commands.awaitInitialization()` 获取 sidecar server 地址和凭证，然后构造 `ServerConnection.Sidecar` 交给 `@opencode-ai/app`。
+Tauri 前端在 `packages/desktop/src/index.tsx:432-458` 通过 `commands.awaitInitialization()` 获取 sidecar server 地址和凭证，然后构造 `ServerConnection.Sidecar` 交给 `@opencode-ai/app`。
 
 Rust 侧在 `packages/desktop/src-tauri/src/server.rs:87-127` 通过 `cli::serve(...)` 拉起本地 sidecar，并轮询 `/global/health` 等待就绪。
 
 ### 8.2 Electron 版
 
-Electron 主进程在 `packages/desktop-electron/src/main/server.ts:32-58` 调 `spawnLocalServer()`，它内部会走 `packages/desktop-electron/src/main/cli.ts:122-195` 启一个 `serve` 子进程，再做健康检查。
+Electron 主进程在 `packages/desktop-electron/src/main/server.ts:32-57` 调 `spawnLocalServer()`，它内部会走 `packages/desktop-electron/src/main/cli.ts:123-195` 启一个 `serve` 子进程，再做健康检查。
 
-Renderer 端再在 `packages/desktop-electron/src/renderer/index.tsx:252-275` 把 sidecar 连接组装成 `ServerConnection.Sidecar`。
+Renderer 端再在 `packages/desktop-electron/src/renderer/index.tsx:252-290` 把 sidecar 连接组装成 `ServerConnection.Sidecar`。
 
 ### 8.3 两个桌面壳的共同点
 

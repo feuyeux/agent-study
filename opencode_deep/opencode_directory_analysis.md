@@ -1,72 +1,139 @@
 # OpenCode 工作区目录结构深度分析
 
-本文档基于真实的 `opencode` 代码仓库（基于 **Bun** 运行时 + **Turborepo** 构建栈）的物理组织结构，解析其作为一个独立子仓的 Monorepo 工程骨架。
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 
 ---
 
-## 1. 整体架构范式与基础设施栈
+## 1. 根目录扮演什么角色
 
-`opencode` 本身不仅是一个 CLI 项目，而是一个包含多主端应用的前端/全栈 Monorepo。
-- **运行时与包管理**: [Bun](https://bun.sh) (`v1.3.10+`)。采用极其新锐的前端栈（`esbuild`, `effect.ts`, `solid-js`）。
-- **工作区编排**: `workspaces` 配置在了 `package.json` 中，包含 `packages/*`, `packages/console/*`, `packages/sdk/js`, `packages/slack` 等，并用 [Turborepo](https://turbo.build/) 做任务流与增量缓存（`turbo.json`）。
-- **云基础设施编排**: 集成了 **SST (Serverless Stack)** (`sst.config.ts`, `infra/`)。通过直接用 TS 编写的 CDK 映射到云组件上部署 Web 与后台应用环境。
+`opencode` 在 `v1.3.2` 里是一个以 **Bun** 为运行时和包管理器、以 **Turborepo** 为工作区编排器的 monorepo。
 
----
+从根目录 `package.json` 可以直接确认三件事：
 
-## 2. 根目录核心控制文件
+1. `packageManager` 是 `bun@1.3.11`。
+2. workspaces 覆盖 `packages/*`、`packages/console/*`、`packages/sdk/js`、`packages/slack`。
+3. 根脚本只做“分发入口”，真正的运行时代码主要在 `packages/opencode`，其他脚本则把不同客户端拉起来。
 
-项目的根路径包含了控制全局编译时（Compile-time）与运行时（Runtime）的策略：
+根目录最值得优先认识的文件是：
 
-- **`package.json`** 
-  - **工作区映射**：指明了所有子 npm 包的位置。它开启了 Bun 的 `catalog` 管理特性，统一全局依赖版本（如 `drizzle-orm`, `hono`, `tailwindcss` 等）。
-  - **核心命令簇**：`dev` 指向了基于 `packages/opencode` 下源码的 TUI 与 Server 启动；另外提供了诸如 `dev:desktop`, `dev:web`, `dev:console`, `dev:storybook` 针对特定客户端的启动通道。
-  - **依赖补丁**：下设 `patchedDependencies`，通过本地 `patches/` 对固化问题第三方包进行强力入侵修补（例如修复官方 `@ai-sdk/xai` 或 `@openrouter` SDK）。
-- **`turbo.json` / `sst.config.ts`**
-  - 控制构建管线的高级拓扑。结合 SST 定义 AWS 等服务部署流。
-- **配置底座支持文件**
-  - 使用 `bunfig.toml` / `bun.lock`。
-  - 全局 Typescript 支持（`tsconfig.json`），并且还混合集成了 Nix 环境声明（`flake.nix`）从而实现在 NixOS 生态下的绝对环境隔离与复现。
+| 路径 | 作用 |
+| --- | --- |
+| `package.json` | 工作区声明、根入口脚本、依赖 catalog、patchedDependencies。 |
+| `bun.lock` / `bunfig.toml` | Bun 锁文件与运行配置。 |
+| `turbo.json` | 跨包任务编排。 |
+| `sst.config.ts` | SST 基础设施入口。 |
+| `flake.nix` / `flake.lock` | Nix 环境声明。 |
 
 ---
 
-## 3. 按业务域划分的核心代码空间 (`packages/`)
+## 2. 根目录有哪些重要顶层目录
 
-工作区内的每一个目录，都是边界明晰的独立模块领域。
+`v1.3.2` 根目录的顶层目录主要是：
 
-### 3.1 核心大底座与运行时
-- **`packages/opencode/`**
-  这是整个底层 AI 运行时能力与服务的承载者（约占系统 70% 逻辑复杂度）。包含了由 yargs 驱动的 CLI、本地 Hono Server、核心基于 SQLite 的 Durable State Machine 引擎，以及与所有大模型通信和调用工具的沙箱体系（详见 `opencode_src_analysis.md`）。
+| 目录 | 角色 |
+| --- | --- |
+| `packages/` | 绝大多数业务代码与工作区包。 |
+| `infra/` | SST 相关基础设施代码。 |
+| `script/` | 根级脚本与发布辅助。 |
+| `patches/` | 对第三方依赖的补丁。 |
+| `sdks/` | 编辑器或外部集成相关资源。 |
+| `specs/` | 规格或协议相关内容。 |
+| `nix/` | Nix 生态支持文件。 |
+| `.opencode/` | 本地运行生成或工作目录相关内容。 |
+| `.github/` / `github/` | GitHub Actions 与仓库自动化相关资源。 |
 
-### 3.2 图形界面与终端呈现
-为了适应多端（Web, App, 终端），展现出极其清晰的前端与展现层解耦：
-- **`packages/app/`**
-  核心的纯 Web 应用程序态（采用 Solid.js 栈构建的高性能界面），能够直接在浏览器运行或被宿主窗口嵌套加载。
-- **桌面端双保险外壳**
-  - **`packages/desktop/`**：最新的主流桌面客户端解决方案，直接通过 `.rs` 调用使用 Rust 编写的 [Tauri](https://tauri.app/) 系统，构建体积小且性能优异。
-  - **`packages/desktop-electron/`**：另一套平行保留的遗留宿主方案，通过 Node (Main) + Browser (Renderer) 托管前端界面。
-- **`packages/console/`**
-  后台云控制台的前端应用入口，通常用于面向多账户管理和审计配置等控制面（Control Plane）相关功能。
-
-### 3.3 生态、服务扩展与基础 UI 库
-- **`packages/slack/`**
-  业务外联服务（第三方办公协同通讯平台接入的 Bot 后台服务端）。
-- **`packages/func/` / `packages/function/`** (视具体构建而定)
-  对应于 SST AWS Lambda 或相似 Serverless 环境分离出的零碎函数片端代码。
-- **`packages/sdk/js`** 等
-  专门抽离出的、用于与 OpenCode 标准化模型/Session 协议交互的 API 客户端 SDK，它是多端界面与 CLI 无缝通信的基础。
-- **公共 UI 资源**
-  比如针对 Storybook 的独立沙盒工作区包。
+这也说明一个边界：根目录不是单一应用，而是“运行时 + 多端壳 + 控制台 + 官网/文档 + 共享库”的集合。
 
 ---
 
-## 4. 其余顶层功能性目录
-除了庞大的业务堆栈 `packages/`，根目录下还存在如下基建：
-- **`script/`**：一套内建的非常严格和现代的发版、检查脚本集合（如自动处理发版和 changelog 合并）。
-- **`infra/`**：以基础设施即代码（IaC）方式定义的云资源结构，跟据不同的 `sst` stage (如 prod/dev) 自动化执行云资源的开通与挂载。
-- **`install/` / `nix/`**：面向用户侧部署和安装依赖（如针对类 Unix 系统和 macOS 的专用一键拉起与引导环境脚本等）。
-- **`patches/`**：存储 `package.json` 设置打入的特殊依赖源修复代码的差异补丁。
-- **`sdks/`**：与特定 IDE 编辑器（通常为 `vscode` / `zed`）集成的配置及特供集成工具包。
+## 3. `packages/` 里的真实分层
 
-## 5. 结论
+`packages/` 是理解整个仓库的关键。按职责看，`v1.3.2` 大致可以分成 5 组。
 
-`opencode` 的多包 Monorepo 体系并非简单的“把库放到一起”，而是服务于**单一运行时内核支撑多样性 UI 显示层**这一产品的终极形态：一套底层核心逻辑 (`packages/opencode`) 可无缝被运行时的内置 HTTP Server 包裹，供跨端的 Web UI (`packages/app`) 或原生平台壳 (`packages/desktop`) 分发调用。并且底层使用了统一且暴力的工具链如 Bun 与 Turbo 保障复杂构建体验不下降。
+### 3.1 核心运行时
+
+| 目录 | 作用 |
+| --- | --- |
+| `packages/opencode/` | 主运行时。包含 CLI、TUI、HTTP Server、Session、Provider、Tool、SQLite、事件总线等核心能力。 |
+| `packages/plugin/` | 插件能力与相关构建脚本。 |
+| `packages/sdk/js/` | 面向外部或其他宿主的 JS SDK。 |
+| `packages/util/` | 共享工具库。 |
+
+如果你的目标是理解“agent 真正如何运行”，优先看 `packages/opencode/`。
+
+### 3.2 用户可见客户端
+
+| 目录 | 作用 |
+| --- | --- |
+| `packages/app/` | 通用前端应用，桌面壳与部分 Web 体验会复用它。 |
+| `packages/desktop/` | Tauri 桌面壳。 |
+| `packages/desktop-electron/` | Electron 桌面壳。 |
+| `packages/web/` | 公开网站/文档站点的 Web 壳与页面路由。 |
+| `packages/enterprise/` | 企业端前端应用。 |
+| `packages/storybook/` | 组件开发与展示沙盒。 |
+
+需要特别区分：
+
+1. `packages/app` 是本地 agent UI 会复用的前端应用。
+2. `packages/web` 是公开网站/文档站点，不等于 `opencode web` 命令背后的本地 runtime。
+
+### 3.3 控制台与云侧代码
+
+| 目录 | 作用 |
+| --- | --- |
+| `packages/console/app/` | 控制台前端。 |
+| `packages/console/core/` | 控制台共享核心逻辑。 |
+| `packages/console/function/` | 控制台相关函数代码。 |
+| `packages/console/mail/` | 控制台邮件相关模块。 |
+| `packages/console/resource/` | 控制台资源层。 |
+| `packages/function/` | 通用函数或服务端代码。 |
+| `packages/identity/` | 身份相关模块。 |
+| `packages/slack/` | Slack 集成。 |
+
+### 3.4 共享 UI、脚本与扩展
+
+| 目录 | 作用 |
+| --- | --- |
+| `packages/ui/` | 共享 UI 组件与样式资源。 |
+| `packages/script/` | 工作区内部可复用脚本。 |
+| `packages/extensions/zed/` | Zed 扩展相关内容。 |
+| `packages/containers/` | 各类构建/发布容器定义。 |
+
+### 3.5 文档内容
+
+| 目录 | 作用 |
+| --- | --- |
+| `packages/docs/` | 文档正文、图片、snippets 等内容源。 |
+| `packages/web/` | 消费这些内容并提供站点壳与页面渲染。 |
+
+这两者在 `v1.3.2` 是分离的，所以“文档内容仓”与“文档站点壳”不要混为一谈。
+
+---
+
+## 4. 对源码阅读最有价值的主路径
+
+如果你的目标是读懂 `opencode` 运行链路，建议按下面顺序看目录：
+
+1. `packages/opencode/`
+2. `packages/app/`
+3. `packages/desktop/` 与 `packages/desktop-electron/`
+4. `packages/sdk/js/`
+5. `packages/plugin/`
+
+这条路径对应的是：
+
+1. 核心 runtime 在哪。
+2. 前端如何消费同一套 HTTP/SSE 协议。
+3. 桌面壳如何拉起本地 sidecar。
+4. SDK 如何把外部调用也收束到同一套 server contract。
+
+---
+
+## 5. 目录结构透露出的架构结论
+
+`v1.3.2` 的目录布局传达了一个非常明确的设计取向：
+
+1. `packages/opencode` 是唯一真正的 agent runtime 内核。
+2. `packages/app`、`packages/desktop`、`packages/desktop-electron` 只是不同宿主和表现层。
+3. `packages/web` 与 `packages/docs` 面向公开站点和文档体系，不是本地 agent runtime 本体。
+4. monorepo 的目的不是“堆在一起”，而是让一套 durable runtime 被多个客户端、控制台和集成层复用。

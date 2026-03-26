@@ -1,6 +1,8 @@
 # OpenCode 深度专题 B03：高级编排，Subagent、Command、Compaction 怎样落回同一条主线
 
-OpenCode 当前并没有引入独立的 workflow engine，但它也绝不只是“模型自己决定下一步用哪个工具”。当前实现里的高级编排，主要靠三套机制完成：`task` 子任务、`command` 模板、`compaction` 压缩恢复。它们的共同点是都回写到同一条 session/message/part 历史里。
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
+在 `v1.3.2` 中，OpenCode 并没有引入独立的 workflow engine，但它也绝不只是“模型自己决定下一步用哪个工具”。高级编排主要靠三套机制完成：`task` 子任务、`command` 模板、`compaction` 压缩恢复。它们的共同点是都回写到同一条 session/message/part 历史里。
 
 ---
 
@@ -84,7 +86,7 @@ SessionPrompt.prompt({
 
 ## 4. `command` 是编排糖衣，不是另一条执行通道
 
-`packages/opencode/src/session/prompt.ts:1749-1925` 的 `command()` 经常被当成独立执行器，其实它本质上只是：
+`packages/opencode/src/session/prompt.ts:1823-1973` 的 `command()` 经常被当成独立执行器，其实它本质上只是：
 
 1. 读取命令模板
 2. 展开参数和 shell 占位符
@@ -93,7 +95,7 @@ SessionPrompt.prompt({
 
 ### 4.1 模板编译能力
 
-`1789-1831` 支持：
+`1790-1879` 支持：
 
 1. `$1`、`$2` 这类位置占位符
 2. `$ARGUMENTS`
@@ -101,7 +103,7 @@ SessionPrompt.prompt({
 
 ### 4.2 决定是否转 subtask
 
-`1872-1897` 的规则是：
+`1920-1945` 的规则是：
 
 1. 如果目标 agent 是 `subagent` 且 `command.subtask !== false`，默认转 subtask
 2. 或 `command.subtask === true` 时强制转 subtask

@@ -1,5 +1,7 @@
 # OpenCode 源码深度解析 A04：`prompt`、`loop`、`processor` 的职责边界
 
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+
 很多介绍会把 OpenCode 说成“一个 loop + 一次模型调用”。这在概念上没错，但对源码分析是不够的。当前实现至少分成三层：`prompt()` 负责把输入编译成 durable user message，`loop()` 负责 session 级调度，`SessionProcessor.process()` 负责消费单轮模型流。
 
 ---
@@ -9,7 +11,7 @@
 | 层 | 代码坐标 | 真正职责 |
 | --- | --- | --- |
 | `SessionPrompt.prompt()` | `packages/opencode/src/session/prompt.ts:162-188` | 把本次输入编译进 durable history，并触发后续调度。 |
-| `SessionPrompt.loop()` | `packages/opencode/src/session/prompt.ts:274-736` | 基于当前 session 历史判断下一轮该做什么：subtask、compaction，还是正常推理。 |
+| `SessionPrompt.loop()` | `packages/opencode/src/session/prompt.ts:278-756` | 基于当前 session 历史判断下一轮该做什么：subtask、compaction，还是正常推理。 |
 | `SessionProcessor.process()` | `packages/opencode/src/session/processor.ts:46-425` | 对单次 `LLM.stream()` 流做事件级消费，把 reasoning/text/tool/step 写回 durable state。 |
 
 最重要的分界线是：
