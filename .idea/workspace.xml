@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="c1755966-9790-4c78-ba46-5c4711b5c70f" name="更改" comment="">
+      <change beforePath="$PROJECT_DIR$/opencode_kickoff/A00-overview.md" beforeDir="false" afterPath="$PROJECT_DIR$/opencode_kickoff/A00-overview.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/opencode_kickoff/B02-context.md" beforeDir="false" afterPath="$PROJECT_DIR$/opencode_kickoff/B02-context.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/opencode_kickoff/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/opencode_kickoff/README.md" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="PackageJsonUpdateNotifier">
+    <dismissed value="$PROJECT_DIR$/opencode/packages/app/package.json" />
+    <dismissed value="$PROJECT_DIR$/opencode/packages/opencode/package.json" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 6,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3BWS83Yr7lWGqjkuienszWvWwSo" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "master",
+    "ignore.virus.scanning.warn.message": "true",
+    "last_opened_file_path": "D:/coding/agent-study",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "preferences.pluginManager",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-3bd3a6803838-JavaScript-WS-261.22158.274" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="默认任务">
+      <changelist id="c1755966-9790-4c78-ba46-5c4711b5c70f" name="更改" comment="" />
+      <created>1774603174702</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1774603174702</updated>
+      <workItem from="1774603176927" duration="35000" />
+      <workItem from="1774603221439" duration="45000" />
+    </task>
+    <servers />
+  </component>
+</project>

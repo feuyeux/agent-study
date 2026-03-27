@@ -4,6 +4,8 @@
 
 本系列基于 `packages/opencode` 当前实现，按**真实调用顺序**解开一次请求的生命周期：入口如何进入 Server，Server 如何进入 session runtime，runtime 怎样把用户输入编译成 durable message，再怎样循环驱动模型、工具和写回。
 
+> 文档状态说明：主线索引以 `A00-A07` 与 `B01-B10` 为准。目录里的 [B08-plugin](./B08-plugin.md) 是保留旧编号的 plugin 深挖补充稿，不参与主编号，但可以作为 [B09](./B09-extension.md) 的延伸阅读。
+
 ---
 
 ## 1. A 系列到底覆盖什么
@@ -54,7 +56,7 @@ sequenceDiagram
     participant Entry as CLI/TUI/Web/Desktop/ACP
     participant Server as Hono Server
     participant Prompt as SessionPrompt.prompt
-    participant Loop as SessionPrompt.loop
+    participant SPLoop as SessionPrompt.loop
     participant Proc as SessionProcessor
     participant LLM as LLM.stream
     participant DB as SQLite/Storage
@@ -63,21 +65,86 @@ sequenceDiagram
     Entry->>Server: HTTP or in-process fetch
     Server->>Prompt: session.prompt / session.command / session.shell
     Prompt->>DB: updateMessage(user) + updatePart(parts)
-    Prompt->>Loop: loop(sessionID)
-    Loop->>DB: MessageV2.stream() / filterCompacted()
-    Loop->>DB: updateMessage(assistant skeleton)
-    Loop->>Proc: process(...)
+    Prompt->>SPLoop: loop(sessionID)
+    SPLoop->>DB: MessageV2.stream() / filterCompacted()
+    SPLoop->>DB: updateMessage(assistant skeleton)
+    SPLoop->>Proc: process(...)
     Proc->>LLM: LLM.stream(...)
     LLM-->>Proc: fullStream events
     Proc->>DB: updatePart / updateMessage / summary / patch
     DB-->>Bus: Database.effect -> publish
-    Bus-->>Entry: SSE / event subscription
-    Proc-->>Loop: continue / compact / stop
+    Bus-->Entry: SSE / event subscription
+    Proc-->>SPLoop: continue / compact / stop
 ```
 
 ---
 
-## 4. A 线刻意不展开什么
+## 4. A 与 B 两条线的全景图
+
+A 系列回答"系统怎么跑起来"，B 系列回答"为什么要这样设计"，两张图一起才完整：
+
+```mermaid
+flowchart LR
+    subgraph A["<b>A 系列 · 执行主线</b><br/><i>How the system runs</i>"]
+        direction TB
+        A01["A01<br/>多端入口与传输适配"]
+        A02["A02<br/>Server 与路由边界"]
+        A03["A03<br/>prompt() 编译 user message"]
+        A04["A04<br/>prompt/loop/processor 边界"]
+        A05["A05<br/>loop() 内部分支展开"]
+        A06["A06<br/>LLM.stream() 请求拼装"]
+        A07["A07<br/>流事件写回 durable state"]
+    end
+
+    subgraph B["<b>B 系列 · 设计专题</b><br/><i>Why it is designed this way</i>"]
+        direction TB
+        B01["B01<br/>Agent/Session/Message/Part 模型"]
+        B02["B02<br/>上下文工程与消息投影"]
+        B03["B03<br/>Subagent/Command/Compaction 编排"]
+        B04["B04<br/>Retry/Overflow/Revert/Permission 韧性"]
+        B05["B05<br/>SQLite/Storage/Bus/Instance 基础设施"]
+        B06["B06<br/>固定骨架与晚绑定设计哲学"]
+        B07["B07<br/>LSP 代码理解与诊断底座"]
+        B08["B08<br/>启动与配置加载"]
+        B09["B09<br/>Plugin/MCP/Command/Skill 扩展面"]
+        B10["B10<br/>SKILL 技能装载与注入"]
+    end
+
+    subgraph Scope["<b>阅读范围</b>"]
+        direction LR
+        How["A 线 →<br/>跑起来"]
+        Why["B 线 →<br/>为什么"]
+    end
+
+    A01 --> A02 --> A03 --> A04 --> A05 --> A06 --> A07
+    A01 -.->|"同一入口"| A02
+    A03 -.->|"同一 prompt"| A04
+    A04 -.->|"同一 loop"| A05
+    A05 -.->|"同一 processor"| A06
+    A06 -.->|"同一流"| A07
+
+    B01 --> B02 --> B03 --> B04 --> B05 --> B06 --> B07 --> B08 --> B09 --> B10
+
+    A01 -.->|"由 B01 定义模型"| B01
+    A03 -.->|"由 B02 注入上下文"| B02
+    A04 -.->|"由 B03 编排扩展"| B03
+    A05 -.->|"由 B04 保护韧性"| B04
+    A06 -.->|"由 B05 提供存储"| B05
+    A07 -.->|"由 B06 解释设计"| B06
+    A01 -.->|"由 B08 解释启动"| B08
+    A03 -.->|"由 B09 汇总扩展"| B09
+    A06 -.->|"由 B09 汇总工具"| B09
+    A03 -.->|"由 B10 解释技能注入"| B10
+
+    How -.->|"先后读"| A
+    Why -.->|"再补读"| B
+```
+
+> **解读**：实线箭头是阅读顺序，虚线箭头是依赖关系。A 系列顺序读，过程中遇到"为什么"的问题再跳 B 系列对应篇。
+
+---
+
+## 5. A 线刻意不展开什么
 
 A 系列关心的是主线，不会在每一篇里展开以下主题：
 
@@ -87,30 +154,42 @@ A 系列关心的是主线，不会在每一篇里展开以下主题：
 4. **Retry、Overflow、自愈、Revert、Permission/Question**：放到 [B04](./B04-resilience.md)。
 5. **SQLite、Drizzle、Bus、GlobalBus、Storage**：放到 [B05](./B05-infra.md)。
 6. **为什么它既固定骨架又大量晚绑定**：放到 [B06](./B06-philosophy.md)。
+7. **LSP 怎样参与符号定位、编辑后校验和状态暴露**：放到 [B07](./B07-lsp.md)。
+8. **启动前到底做了哪些目录准备、配置叠加和 bootstrap**：放到 [B08](./B08-startup-config.md)。
+9. **Plugin、MCP、Command、Skill、Custom Tool 怎样挂进系统**：放到 [B09](./B09-extension.md)。
+10. **Skill 怎样被发现、授权、加载并重新注入上下文/命令/工具**：放到 [B10](./B10-skill.md)。
 
 也就是说，A 系列先回答“系统是怎么跑起来的”，B 系列再回答“为什么要这样设计”。
 
 ---
 
-## 5. 读 A 线时要抓住的三个事实
+## 6. 读 A 线时要抓住的三个事实
 
-### 5.1 真相源是数据库历史，不是内存对象
+### 6.1 真相源是数据库历史，不是内存对象
 
 `loop()` 的输入来自 `MessageV2.stream()`，而不是一个长驻 conversation 实例。每一轮都在 durable history 上重新求 `lastUser`、`lastAssistant`、`tasks`。
 
-### 5.2 assistant 骨架会先落盘
+### 6.2 assistant 骨架会先落盘
 
 不论是普通推理、subtask，还是 compaction，OpenCode 都会先插入 assistant message，再开始消费模型流或工具结果。这让崩溃恢复、UI 订阅和 fork/revert 都有稳定锚点。
 
-### 5.3 所有“特殊能力”都回写成普通 history
+### 6.3 所有“特殊能力”都回写成普通 history
 
 subtask 会变成 `subtask` part + child session，compaction 会变成 `compaction` user part + `summary` assistant，shell/command 也会写成普通 user/assistant/tool history。系统没有第二条隐式执行通道。
 
 ---
 
-## 6. 推荐阅读方式
+## 7. 推荐阅读方式
 
 1. 先读 [A01](./A01-entry.md) 和 [A02](./A02-server.md)，明确 transport 与 runtime 的边界。
 2. 再读 [A03](./A03-prompt.md) 到 [A05](./A05-loop.md)，把 `prompt -> loop -> processor` 吃透。
 3. 接着看 [A06](./A06-llm.md) 和 [A07](./A07-state.md)，理解“请求如何发出去、结果如何落回来”。
-4. 最后回看 [B01](./B01-model.md) 到 [B06](./B06-philosophy.md)，把对象模型和设计哲学补齐。
+4. 最后回看 [B01](./B01-model.md) 到 [B10](./B10-skill.md)，把对象模型、设计哲学，以及 LSP、启动配置、扩展机制和 SKILL 系统补齐。
+5. 如果想把 plugin hook、认证覆写和失败语义再看深一层，再读补充稿 [B08-plugin](./B08-plugin.md)。
+
+---
+
+## 8. 补充材料
+
+1. [infographic.html](./infographic.html)：一页式图解版摘要，适合在正式通读前快速建立模块关系。
+2. [OpenCode_Architecture.png](./OpenCode_Architecture.png)：README 顶部使用的架构图原图。

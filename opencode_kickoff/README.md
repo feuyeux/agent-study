@@ -18,7 +18,7 @@
 | `packages/desktop-electron` | Electron 桌面壳，职责与 Tauri 版本类似。 | A01 的另一条桌面入口。 |
 | `packages/web` | 公开站点/文档站点的 Web 壳与页面路由。 | **不是** `opencode web` 命令背后的本地 runtime UI。 |
 | `packages/docs` | 文档正文、图片与 snippets 等内容源。 | 用于区分“文档内容仓”和 `packages/web` 这层站点壳。 |
-| `packages/plugin` / `packages/sdk/js` / `packages/ui` | 插件、SDK、通用 UI。 | B02/B05/B06 讨论扩展点时会带到。 |
+| `packages/plugin` / `packages/sdk/js` / `packages/ui` | 插件、SDK、通用 UI。 | B02/B05/B06/B09 讨论扩展点时会带到。 |
 
 因此，这套文档的分析重心是：
 
@@ -35,13 +35,15 @@
 | 线 | 关注点 | 文档 |
 | --- | --- | --- |
 | A 线 | 一次请求从入口到落盘的执行主线。 | [A00](./A00-overview.md) 到 [A07](./A07-state.md) |
-| B 线 | 支撑这条主线的对象模型、上下文工程、编排能力、韧性和基础设施。 | [B01](./B01-model.md) 到 [B06](./B06-philosophy.md) |
+| B 线 | 支撑这条主线的对象模型、上下文工程、编排能力、韧性、基础设施，以及 LSP、启动配置、扩展机制和 SKILL 系统。 | [B01](./B01-model.md) 到 [B10](./B10-skill.md) |
 
 建议阅读顺序不是 A/B 二选一，而是：
 
 1. 先读 [A00](./A00-overview.md) 建立执行主线。
 2. 再顺着 A01-A07 跑一遍完整调用链。
-3. 最后回到 B01-B06，看这条调用链背后的数据结构、约束和设计哲学。
+3. 最后回到 B01-B10，看这条调用链背后的数据结构、约束、设计哲学，以及 LSP、启动配置、扩展机制和 SKILL 系统。
+
+当前主线编号以 `A00-A07` 和 `B01-B10` 为准。目录里另外保留了少量补充稿与图解材料，它们不参与主编号，但会保留某些单点主题的更细展开，避免为了收束结构而牺牲细节。
 
 ---
 
@@ -110,6 +112,10 @@ flowchart LR
 | A04-A05 loop 编排 | B03 高级编排、B04 韧性机制。 |
 | A06 LLM 请求 | B02 上下文投影、B06 晚绑定策略。 |
 | A07 durable 写回 | B05 持久化与事件总线。 |
+| A03/A07 文件读写与符号片段 | B07 LSP，解释符号 range 修正、诊断回写和状态暴露。 |
+| A01/A02 入口与实例建立 | B08 启动与配置加载，解释全局目录、配置优先级和 `InstanceBootstrap()`。 |
+| A03/A06 工具与命令扩展 | B09 扩展面，解释 Plugin/MCP/Command/Skill/Custom Tool 怎样汇总进 runtime。 |
+| A03/A06 技能发现、装载与上下文注入 | B10 SKILL，解释技能包怎样被发现、授权、投影成 system prompt、tool 和 command。 |
 
 如果把 A 线当作“顺着调用栈走”，那 B 线就是“解释为什么这条调用栈能成立”。
 
@@ -120,7 +126,15 @@ flowchart LR
 1. [A00-overview](./A00-overview.md)：先拿到完整主线和章节边界。
 2. [A01-entry](./A01-entry.md) + [A02-server](./A02-server.md)：把入口和 Server 边界看准。
 3. [A03-prompt](./A03-prompt.md) 到 [A07-state](./A07-state.md)：顺着 `prompt -> loop -> processor -> llm -> writeback` 跑完。
-4. [B01-model](./B01-model.md) 到 [B06-philosophy](./B06-philosophy.md)：再回头理解对象模型、上下文编译、编排、韧性和设计哲学。
+4. [B01](./B01-model.md) 到 [B10](./B10-skill.md)：再回头理解对象模型、上下文编译、编排、韧性、基础设施，以及 LSP、启动配置、扩展机制和 SKILL 系统。
+
+---
+
+## 7. 补充材料
+
+1. [B08-plugin](./B08-plugin.md)：Plugin 系统的单篇深挖补充稿，保留了旧编号 `B08`；主线理解仍以 [B09](./B09-extension.md) 为准。
+2. [infographic.html](./infographic.html)：一页式图解版摘要，适合在通读前先建立模块关系。
+3. [OpenCode_Architecture.png](./OpenCode_Architecture.png)：README 顶部架构图的原图资源。
 
 整套文档的中心结论可以先记住一句：
 

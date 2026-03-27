@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/claude-code" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/codex" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/gemini-cli" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/openclaw" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/opencode" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/zeroclaw" vcs="Git" />
+  </component>
+</project>
