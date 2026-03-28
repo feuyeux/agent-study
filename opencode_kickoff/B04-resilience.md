@@ -183,7 +183,7 @@ shell、loop、task tool 都会监听这个 abort signal。
 
 ---
 
-## 8. B04 的核心结论
+## 8. 把 B04 压成一句代码级结论
 
 `v1.3.2` 的韧性不是某个 retry helper，而是一整套“把失败变成可调度状态”的机制：
 

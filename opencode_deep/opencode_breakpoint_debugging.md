@@ -16,13 +16,6 @@
 3. VS Code 需要安装 Bun 扩展 `oven.bun-vscode`。
 4. 第一次调试时，先把断点打在 `packages/opencode/src/index.ts` 顶部。
 
-常用断点位置：
-
-- `packages/opencode/src/index.ts`：CLI 入口、参数解析、命令注册
-- `packages/opencode/src/cli/cmd/run.ts`：`run` 子命令
-- `packages/opencode/src/cli/cmd/mcp.ts`：MCP 与 OAuth 相关流程
-- `packages/opencode/src/cli/cmd/debug/index.ts`：`debug` 子命令入口
-
 如果你是第一次连断点，最稳妥的顺序仍然是先确认 `index.ts` 能停住，再往具体命令文件里追。另一个容易踩坑的点是：不要从 `packages/opencode/bin/opencode` 开始调，那一层主要是发布分发时的包装入口。
 
 ## VS Code
@@ -86,7 +79,7 @@ bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser
    - `yargs(...)` 注册了哪些命令
    - `cli.parse()` 前后的执行流
 
-### 只想调某个具体命令怎么办
+### 调某个具体命令
 
 IDE 配置不用改，只改终端里的启动参数即可。
 
@@ -94,6 +87,36 @@ IDE 配置不用改，只改终端里的启动参数即可。
 
 ```powershell
 bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts run "hello"
+```
+
+如果你想在端点调试时给 `run "hello"` 指定模型，把 `--model` 放在 `run` 后面、消息前面即可。例如：
+
+```powershell
+bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts run --model <provider>/<model> "hello"
+```
+
+简写也可以：
+
+```powershell
+bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts run -m <provider>/<model> "hello"
+```
+
+注意这里的 `<provider>/<model>` 只是占位写法，尖括号也不要原样输入。查看opencode的模型使用如下命令。
+
+```powershell
+opencode models
+```
+
+"OpenCode Zen"/"MiMo V2 Pro Free":
+
+```
+bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts run -m opencode/mimo-v2-pro-free "hello"
+```
+
+如果还要一起指定模型变体，也是在 `run` 子命令后继续补，例如：
+
+```powershell
+bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts run --model <provider>/<model> --variant high "hello"
 ```
 
 例如调 MCP：
@@ -123,33 +146,44 @@ bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser
 
 在 JetBrains 里执行：
 
-1. `Run | Edit Configurations`
-2. 点 `+`
-3. 选择 `Bun`
+1. `Run | Edit Configurations` 点 `+` 选择 `Bun`
 
-然后把入口文件指到：
-
-- `packages/opencode/src/index.ts`
-
-再把 `Bun parameters` 补上：
-
-```text
---cwd packages/opencode --conditions=browser
-```
+- `File`: `packages/opencode/src/index.ts`
+- `Bun parameters`: `--cwd packages/opencode --conditions=browser`
 
 ### 第三步：直接点 Debug
 
-无需手工先跑：
+JetBrains / WebStorm 会在你点 `Debug` 时自己拉起并附加调试器，所以这里通常不需要像 VS Code 那样手工维护 `6499/opencode` 这个 inspector 地址。
 
-```powershell
-bun run --inspect-brk=9229 --cwd packages/opencode --conditions=browser src/index.ts
-```
+### 调某个具体命令
+
+RUN:
+
+- `File`：`packages/opencode/src/index.ts`
+- `Bun parameters`：`--cwd packages/opencode --conditions=browser`
+- `Arguments` / `Program arguments`：`run "hello"`
+
+如果要给这条 `run "hello"` 指定模型，就把模型参数直接写进 `Arguments` / `Program arguments`：
+
+"OpenCode Zen"/"MiMo V2 Pro Free":
+
+- `Arguments` / `Program arguments`：`run --model opencode/mimo-v2-pro-free "hello"`
+
+如果还要指定模型变体：
+
+- `Arguments` / `Program arguments`：`run --model <provider>/<model> --variant high "hello"`
+
+调 MCP:
+
+- `File`：`packages/opencode/src/index.ts`
+- `Bun parameters`：`--cwd packages/opencode --conditions=browser`
+- `Arguments` / `Program arguments`：`mcp debug my-server`
 
 ## 最后
 
 ### 想一边断点一边看日志
 
-VS Code / Cursor 可以直接在启动命令后面补日志参数：
+VS Code 可以直接在启动命令后面补日志参数：
 
 ```powershell
 bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts --print-logs --log-level DEBUG
@@ -164,4 +198,4 @@ JetBrains 如果要看同样的日志，把下面这段放到 `Arguments` / `Pro
 ### 总结
 
 - VS Code：先跑 `bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts`，再附加 `opencode (attach 6499)`
-- JetBrains：直接建一个 `Bun` 运行配置，入口指向 `packages/opencode/src/index.ts`，`Bun parameters` 填 `--cwd packages/opencode --conditions=browser`，然后点 `Debug`
+- JetBrains：直接建一个 `Bun` 运行配置，`File` 指向 `packages/opencode/src/index.ts`，`Bun parameters` 填 `--cwd packages/opencode --conditions=browser`，具体子命令和模型参数都放到 `Arguments` / `Program arguments`，然后点 `Debug`

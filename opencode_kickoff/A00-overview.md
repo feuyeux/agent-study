@@ -1,55 +1,71 @@
 # A 系列索引：OpenCode 执行主线深度解析
 
-> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
+> 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对。
 
-本系列基于 `packages/opencode` 当前实现，按**真实调用顺序**解开一次请求的生命周期：入口如何进入 Server，Server 如何进入 session runtime，runtime 怎样把用户输入编译成 durable message，再怎样循环驱动模型、工具和写回。
+本篇不是泛化索引，而是把 A 系列每一篇都钉回默认执行主线上的具体代码跳点。只要沿着这些跳点读，整条链会非常稳定：
+
+```text
+opencode/package.json
+  -> packages/opencode/src/index.ts
+  -> cli/cmd/tui/thread.ts / run.ts / attach.ts
+  -> server/server.ts
+  -> server/routes/session.ts
+  -> session/prompt.ts
+  -> session/processor.ts
+  -> session/llm.ts
+  -> session/index.ts / message-v2.ts
+```
 
 > 文档状态说明：主线索引以 `A00-A07` 与 `B01-B10` 为准。目录里的 [B08-plugin](./B08-plugin.md) 是保留旧编号的 plugin 深挖补充稿，不参与主编号，但可以作为 [B09](./B09-extension.md) 的延伸阅读。
 
 ---
 
-## 1. A 系列到底覆盖什么
+## 1. A 系列其实就是 7 个代码交接点
 
-| 篇 | 标题 | 主文件 | 真正要回答的问题 |
+| 篇 | 主文件 | 真正盯住的交接点 | 这一跳回答什么 |
 | --- | --- | --- | --- |
-| [A01](./A01-entry.md) | 多端入口与传输适配 | `src/index.ts`、`cli/cmd/run.ts`、`cli/cmd/tui/*`、桌面壳 | CLI/TUI/Web/Attach/ACP/Desktop 最后怎样统一成同一个 session 协议 |
-| [A02](./A02-server.md) | Server 与路由边界 | `server/server.ts`、`server/routes/session.ts` | Hono app 如何挂载中间件、绑定 `Instance`/`Workspace`，以及 `/session` 路由怎样进入 runtime |
-| [A03](./A03-prompt.md) | `prompt()` 如何编译 durable user message | `session/prompt.ts` | text/file/agent/subtask parts 怎样被展开、补写 synthetic part、最终落库 |
-| [A04](./A04-orchestrator.md) | `prompt`、`loop`、`processor` 的职责边界 | `session/prompt.ts`、`session/processor.ts` | 谁负责读历史，谁负责分支决策，谁负责消费模型流 |
-| [A05](./A05-loop.md) | `loop()` 内部分支怎样展开 | `session/prompt.ts` | subtask、compaction、overflow、normal round 各自怎样修改 durable state |
-| [A06](./A06-llm.md) | `LLM.stream()` 怎样把 runtime 状态绑定成 provider 请求 | `session/llm.ts`、`session/system.ts`、`provider/provider.ts` | system prompt、tool set、provider params、兼容层和 `streamText()` 调用如何拼起来 |
-| [A07](./A07-state.md) | 流事件怎样写回 durable state 并重新投影 | `session/processor.ts`、`session/index.ts`、`session/message-v2.ts` | reasoning/text/tool/step 事件如何写回 part/message，前端怎样再把它们读出来 |
+| [A01](./A01-entry.md) | `src/index.ts`、`cli/cmd/run.ts`、`cli/cmd/tui/*`、桌面壳 | 入口怎样收束成同一套 HTTP/SSE contract | CLI/TUI/Web/Attach/ACP/Desktop 为什么最后都能打到同一个 server |
+| [A02](./A02-server.md) | `server/server.ts`、`server/routes/session.ts` | 请求怎样获得 `WorkspaceContext` / `Instance` | Hono app 怎样完成认证、实例绑定、路由装配并进入 `/session` |
+| [A03](./A03-prompt.md) | `session/prompt.ts` | `POST /session/:id/message` 怎样变成 durable user message | text/file/agent/subtask parts 怎样被编译、改写和落库 |
+| [A04](./A04-orchestrator.md) | `session/prompt.ts`、`session/processor.ts` | `prompt -> loop -> processor` 三层边界 | 谁负责写输入、谁负责判分支、谁负责消费单轮模型流 |
+| [A05](./A05-loop.md) | `session/prompt.ts` | `loop()` 里的硬编码分支顺序 | pending subtask、compaction、overflow、normal round 怎样逐个落到代码里 |
+| [A06](./A06-llm.md) | `session/llm.ts`、`session/system.ts`、`provider/provider.ts` | 进入模型前的最后一次编译 | provider prompt、system、tools、headers、options、middleware 怎样拼起来 |
+| [A07](./A07-state.md) | `session/processor.ts`、`session/index.ts`、`message-v2.ts` | 模型流怎样写回 durable state | reasoning/text/tool/step/patch 事件怎样落库并重新投影给前端 |
+
+所以 A 系列不是“7 个独立话题”，而是 7 个固定交接点。
 
 ---
 
-## 2. 一次请求的真实调用链
+## 2. 如果把默认主线压成一条调用链
 
-把关键函数压成一条链，就是：
+只看默认 `opencode` / `bun dev` 主线，可以压成下面这 10 步：
 
-1. 入口层解析用户动作。
-   - `src/index.ts` 注册命令。
-   - `run`、`$0`(TUI)、`attach`、`web`、`serve`、`acp`、桌面 sidecar 分别决定传输方式。
-2. 请求进入 `Server.createApp()`。
-   - 认证、日志、CORS、`WorkspaceContext`、`Instance.provide()` 都在这里挂上。
-3. `/session/:sessionID/message` 或相关 API 进入 `SessionPrompt.prompt()`。
-   - 先清理 revert 状态，再调用 `createUserMessage()` 写入 durable user message/parts。
-4. `prompt()` 进入 `SessionPrompt.loop()`。
-   - 每轮从 `MessageV2.stream()`/`filterCompacted()` 回放当前 session 历史。
-   - 决定这轮是 subtask、compaction，还是正常模型推理。
-5. 正常推理分支创建 `SessionProcessor`。
-   - 先插入 assistant 骨架 message，再组 system/messages/tools，最后调用 `processor.process()`。
-6. `SessionProcessor.process()` 调 `LLM.stream()`。
-   - `LLM.stream()` 负责 provider/model/tool/system 的晚绑定，并最终调用 `streamText()`。
-7. `SessionProcessor` 消费模型流并写回。
-   - 把 reasoning/text/tool/step/patch 逐个写成 durable part。
-   - 更新 assistant message 的 `finish`、`tokens`、`cost`、`error`。
-8. `loop()` 根据结果继续下一轮或停止。
-   - 停止后返回最新 assistant message。
-   - 前端和 CLI 通过 SSE/Bus 订阅同一批 durable 事件。
+1. `opencode/package.json:8-18`
+   `dev` 把开发态启动送进 `packages/opencode/src/index.ts`。
+2. `packages/opencode/src/index.ts:67-147`
+   初始化日志、环境变量、SQLite 迁移，并注册所有命令。
+3. `cli/cmd/tui/thread.ts:66-230`
+   默认 `$0 [project]` 命令解析目录、启动 worker、选择内嵌还是真实 HTTP transport。
+4. `cli/cmd/tui/worker.ts:47-154`
+   用 `Server.Default().fetch()` 和 `sdk.event.subscribe()` 把 UI 接到 runtime。
+5. `server/server.ts:55-253`
+   请求经过 `onError -> auth -> logging -> CORS -> WorkspaceContext -> Instance.provide -> route mount`。
+6. `server/routes/session.ts:783-821`
+   `/session/:sessionID/message` 调 `SessionPrompt.prompt({ ...body, sessionID })`。
+7. `session/prompt.ts:162-188`
+   `prompt()` 先 `createUserMessage(input)`，把本次输入编译进 durable history。
+8. `session/prompt.ts:278-756`
+   `loop()` 每轮回放 `MessageV2.stream()`，判断这轮该走 subtask、compaction，还是 normal round。
+9. `session/processor.ts:46-425`
+   `processor.process()` 只消费这一轮 `LLM.stream()` 产出的事件流。
+10. `session/index.ts`、`message-v2.ts`
+    `Session.updateMessage()` / `updatePart()` 把结果写回 SQLite，再通过 `Bus` / SSE 投影出去。
+
+只要记住这条链，后面的章节就不是“很多功能点”，而是“每一步把上一跳产物改造成下一跳输入”。
 
 ---
 
-## 3. 把这条链按时序画出来
+## 3. 按时序看，这条链的产物怎样一层层变化
 
 ```mermaid
 sequenceDiagram
@@ -77,115 +93,84 @@ sequenceDiagram
     Proc-->>SPLoop: continue / compact / stop
 ```
 
+这张图最应该看的不是“模块名”，而是每一步的 durable 产物：
+
+1. 入口层产出的是一个 HTTP/RPC 请求。
+2. `prompt()` 产出的是 durable user message / parts。
+3. `loop()` 产出的是本轮要执行的分支，以及一条 assistant skeleton。
+4. `processor` 产出的是一串 durable parts 和 assistant finish/error/tokens。
+5. 前端订阅到的不是临时内存态，而是数据库写回后的事件投影。
+
 ---
 
-## 4. A 与 B 两条线的全景图
+## 4. A 线为什么必须和 B 线一起读
 
-A 系列回答"系统怎么跑起来"，B 系列回答"为什么要这样设计"，两张图一起才完整：
+### 4.1 A 线回答“主调用链怎么走”
 
-```mermaid
-flowchart LR
-    subgraph A["<b>A 系列 · 执行主线</b><br/><i>How the system runs</i>"]
-        direction TB
-        A01["A01<br/>多端入口与传输适配"]
-        A02["A02<br/>Server 与路由边界"]
-        A03["A03<br/>prompt() 编译 user message"]
-        A04["A04<br/>prompt/loop/processor 边界"]
-        A05["A05<br/>loop() 内部分支展开"]
-        A06["A06<br/>LLM.stream() 请求拼装"]
-        A07["A07<br/>流事件写回 durable state"]
-    end
+| A 线节点 | 需要的 B 线补充 |
+| --- | --- |
+| A01 入口与 transport | [B08](./B08-startup-config.md)、[B05](./B05-infra.md) 解释配置加载、instance bootstrap 和事件基础设施 |
+| A03 输入编译 | [B01](./B01-model.md)、[B02](./B02-context.md) 解释 MessageV2/Part 模型和上下文编译 |
+| A04-A05 编排主线 | [B03](./B03-orchestration.md)、[B04](./B04-resilience.md) 解释 subtask / compaction / retry / revert |
+| A06 模型请求 | [B02](./B02-context.md)、[B06](./B06-philosophy.md)、[B09](./B09-extension.md) 解释 system/tool/provider 的晚绑定 |
+| A07 durable 写回 | [B05](./B05-infra.md) 解释 SQLite、Bus、effect 队列为什么能保证投影一致性 |
 
-    subgraph B["<b>B 系列 · 设计专题</b><br/><i>Why it is designed this way</i>"]
-        direction TB
-        B01["B01<br/>Agent/Session/Message/Part 模型"]
-        B02["B02<br/>上下文工程与消息投影"]
-        B03["B03<br/>Subagent/Command/Compaction 编排"]
-        B04["B04<br/>Retry/Overflow/Revert/Permission 韧性"]
-        B05["B05<br/>SQLite/Storage/Bus/Instance 基础设施"]
-        B06["B06<br/>固定骨架与晚绑定设计哲学"]
-        B07["B07<br/>LSP 代码理解与诊断底座"]
-        B08["B08<br/>启动与配置加载"]
-        B09["B09<br/>Plugin/MCP/Command/Skill 扩展面"]
-        B10["B10<br/>SKILL 技能装载与注入"]
-    end
+### 4.2 B 线回答“为什么主调用链能稳定成立”
 
-    subgraph Scope["<b>阅读范围</b>"]
-        direction LR
-        How["A 线 →<br/>跑起来"]
-        Why["B 线 →<br/>为什么"]
-    end
+如果 A 线只顺着调用栈看，会知道“代码怎么走”；但很多关键判断只有回到 B 线才会完整：
 
-    A01 --> A02 --> A03 --> A04 --> A05 --> A06 --> A07
-    A01 -.->|"同一入口"| A02
-    A03 -.->|"同一 prompt"| A04
-    A04 -.->|"同一 loop"| A05
-    A05 -.->|"同一 processor"| A06
-    A06 -.->|"同一流"| A07
+1. 为什么 `loop()` 每轮都能重新求状态，而不是依赖内存 conversation。
+2. 为什么 plugin、MCP、skill 很多，但没长出第二条执行骨架。
+3. 为什么崩溃恢复、fork、revert、compaction 可以共存。
 
-    B01 --> B02 --> B03 --> B04 --> B05 --> B06 --> B07 --> B08 --> B09 --> B10
-
-    A01 -.->|"由 B01 定义模型"| B01
-    A03 -.->|"由 B02 注入上下文"| B02
-    A04 -.->|"由 B03 编排扩展"| B03
-    A05 -.->|"由 B04 保护韧性"| B04
-    A06 -.->|"由 B05 提供存储"| B05
-    A07 -.->|"由 B06 解释设计"| B06
-    A01 -.->|"由 B08 解释启动"| B08
-    A03 -.->|"由 B09 汇总扩展"| B09
-    A06 -.->|"由 B09 汇总工具"| B09
-    A03 -.->|"由 B10 解释技能注入"| B10
-
-    How -.->|"先后读"| A
-    Why -.->|"再补读"| B
-```
-
-> **解读**：实线箭头是阅读顺序，虚线箭头是依赖关系。A 系列顺序读，过程中遇到"为什么"的问题再跳 B 系列对应篇。
+所以最稳妥的读法是：A 线先按顺序跑一遍，遇到“为什么会这样”再跳 B 线补结构。
 
 ---
 
 ## 5. A 线刻意不展开什么
 
-A 系列关心的是主线，不会在每一篇里展开以下主题：
+A 系列只盯主链，不会把这些专题塞进每一篇里反复展开：
 
-1. **Agent/Session/Message/Part 的 schema 设计**：放到 [B01](./B01-model.md)。
-2. **系统指令、AGENTS.md、技能、投影到 ModelMessage 的全过程**：放到 [B02](./B02-context.md)。
-3. **Subagent、Command、Compaction 的编排抽象**：放到 [B03](./B03-orchestration.md)。
-4. **Retry、Overflow、自愈、Revert、Permission/Question**：放到 [B04](./B04-resilience.md)。
-5. **SQLite、Drizzle、Bus、GlobalBus、Storage**：放到 [B05](./B05-infra.md)。
-6. **为什么它既固定骨架又大量晚绑定**：放到 [B06](./B06-philosophy.md)。
-7. **LSP 怎样参与符号定位、编辑后校验和状态暴露**：放到 [B07](./B07-lsp.md)。
-8. **启动前到底做了哪些目录准备、配置叠加和 bootstrap**：放到 [B08](./B08-startup-config.md)。
-9. **Plugin、MCP、Command、Skill、Custom Tool 怎样挂进系统**：放到 [B09](./B09-extension.md)。
-10. **Skill 怎样被发现、授权、加载并重新注入上下文/命令/工具**：放到 [B10](./B10-skill.md)。
+1. **对象模型**：`Agent / Session / MessageV2 / Part` 的 durable schema，放到 [B01](./B01-model.md)。
+2. **上下文工程**：system prompt、AGENTS/CLAUDE、skill、历史投影、tool set，放到 [B02](./B02-context.md)。
+3. **高级编排**：subagent、command、compaction 的专题展开，放到 [B03](./B03-orchestration.md)。
+4. **韧性机制**：retry、overflow、自愈、revert、permission/question，放到 [B04](./B04-resilience.md)。
+5. **基础设施**：SQLite、Storage、Bus、Instance、SSE，放到 [B05](./B05-infra.md)。
+6. **固定骨架与晚绑定**：为什么这套 runtime 看起来灵活，但中心骨架很硬，放到 [B06](./B06-philosophy.md)。
+7. **LSP / 启动配置 / 扩展 / Skill**：分别放到 [B07](./B07-lsp.md) 到 [B10](./B10-skill.md)。
 
-也就是说，A 系列先回答“系统是怎么跑起来的”，B 系列再回答“为什么要这样设计”。
+这个边界很重要，因为 A 线的价值恰恰在于不被专题细节打断。
 
 ---
 
-## 6. 读 A 线时要抓住的三个事实
+## 6. 读 A 线时要死盯的 4 个代码事实
 
-### 6.1 真相源是数据库历史，不是内存对象
+### 6.1 请求作用域先于 session
 
-`loop()` 的输入来自 `MessageV2.stream()`，而不是一个长驻 conversation 实例。每一轮都在 durable history 上重新求 `lastUser`、`lastAssistant`、`tasks`。
+`Server.createApp()` 会先通过 `WorkspaceContext.provide(...)` 和 `Instance.provide(...)` 把请求绑定到当前 `workspace` 和 `directory`，然后后面的 `/session` 路由才开始工作。
 
-### 6.2 assistant 骨架会先落盘
+### 6.2 `prompt()` 先写 durable 输入，再决定要不要回复
 
-不论是普通推理、subtask，还是 compaction，OpenCode 都会先插入 assistant message，再开始消费模型流或工具结果。这让崩溃恢复、UI 订阅和 fork/revert 都有稳定锚点。
+`SessionPrompt.prompt()` 不会直接碰模型。它先 `createUserMessage(input)`，必要时改 session permission，然后才决定 `noReply` 还是 `loop()`。
 
-### 6.3 所有“特殊能力”都回写成普通 history
+### 6.3 `loop()` 每轮都重新回放历史
 
-subtask 会变成 `subtask` part + child session，compaction 会变成 `compaction` user part + `summary` assistant，shell/command 也会写成普通 user/assistant/tool history。系统没有第二条隐式执行通道。
+`MessageV2.filterCompacted(MessageV2.stream(sessionID))` 是 `loop()` 的真实输入，不是某个常驻会话对象。subtask、compaction、overflow 都是基于这批 durable 历史再次分支。
+
+### 6.4 `processor` 只负责单轮，不负责全局调度
+
+`SessionProcessor.process()` 的职责只是消费一次 `LLM.stream()` 产出的事件流，把 reasoning/text/tool/step 写回 state，再返回 `"continue" | "compact" | "stop"` 给 `loop()`。
+
+只要这 4 件事没看偏，A01-A07 的边界就不会混。
 
 ---
 
-## 7. 推荐阅读方式
+## 7. 推荐阅读顺序
 
-1. 先读 [A01](./A01-entry.md) 和 [A02](./A02-server.md)，明确 transport 与 runtime 的边界。
-2. 再读 [A03](./A03-prompt.md) 到 [A05](./A05-loop.md)，把 `prompt -> loop -> processor` 吃透。
-3. 接着看 [A06](./A06-llm.md) 和 [A07](./A07-state.md)，理解“请求如何发出去、结果如何落回来”。
-4. 最后回看 [B01](./B01-model.md) 到 [B10](./B10-skill.md)，把对象模型、设计哲学，以及 LSP、启动配置、扩展机制和 SKILL 系统补齐。
-5. 如果想把 plugin hook、认证覆写和失败语义再看深一层，再读补充稿 [B08-plugin](./B08-plugin.md)。
+1. 先读 [A01](./A01-entry.md) 和 [A02](./A02-server.md)，把 transport 边界和 runtime 边界切开。
+2. 再读 [A03](./A03-prompt.md) 到 [A05](./A05-loop.md)，把 `prompt -> loop -> processor` 的交接链吃透。
+3. 接着看 [A06](./A06-llm.md) 和 [A07](./A07-state.md)，理解“请求怎样发出去、结果怎样落回来”。
+4. 最后回看 [B01](./B01-model.md) 到 [B10](./B10-skill.md)，补对象模型、上下文工程、韧性、基础设施，以及 LSP、启动配置和扩展系统。
 
 ---
 

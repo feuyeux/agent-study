@@ -66,6 +66,38 @@ Worker 并行启动：
 
 一句话概括：主线程负责把 TUI 跑起来，worker 负责把 runtime 点着，而点火器正是 worker 启动后最早发出的 `/event` 请求。
 
+### 2.1 `InstanceBootstrap` 里这几步分别在“加载”什么
+
+上面 `55` 到 `64` 行如果只看函数名，容易误以为这些步骤都会“立刻把完整子系统跑起来”。实际不是，它们的重量级动作并不一样：
+
+- `Project.fromDirectory()`
+  解析当前目录属于哪个项目实例。它会探测 `.git`、识别 `worktree` / `sandbox`、推导项目 ID，并把项目信息 upsert 到数据库。这里拿到的是 **instance 上下文**，后面的初始化都依赖它。
+- `Plugin.init()`
+  真正加载插件系统。它会创建一个指向当前 server 的 SDK client，加载内建插件，按配置安装/导入外部插件，执行插件的 `config` hook，并订阅总线事件转发给插件。所以这一步不是“登记一下插件名”，而是 **把插件 hook 体系接上**。
+- `ShareNext.init()`
+  不是立刻发分享请求，而是订阅 `session.updated`、`message.updated`、`message.part.updated`、`session.diff` 等事件。后面只有当会话真的变化时，才会触发远端 share sync。
+- `Format.init()`
+  读取 formatter 配置，构建可用 formatter 列表，并订阅 `File.Event.Edited`。真正执行格式化命令是在文件编辑事件发生后，不是在启动时一次性跑完。
+- `LSP.init()`
+  读取 LSP 配置，整理启用的 server 定义，建立 `servers / clients / spawning / broken` 这些状态容器。这里 **通常还没有真正 spawn 语言服务器进程**；具体 client 往往要等到某个文件命中对应语言能力时才会懒启动。
+- `File.init()`
+  这是比较“实”的一步。它会先做一次文件树扫描，把项目里的 `files` / `dirs` 索引缓存起来，后面的搜索、自动补全、文件选择都会直接吃这份缓存。
+- `FileWatcher.init()`
+  建立文件监听器。会根据平台加载 `@parcel/watcher` 的原生 binding，按配置订阅项目目录，以及在 Git 项目里额外订阅 `.git` 目录的关键变化事件。
+- `Vcs.init()`
+  如果项目是 Git 仓库，会先读取当前分支名，然后订阅 `FileWatcher.Event.Updated`，专门盯 `HEAD` 变化，分支切换后发出 `vcs.branch.updated`。
+- `Snapshot.init()`
+  这里主要是把 snapshot 服务挂到 instance 上，并启动定期 cleanup 循环。注意它 **不是一进来就 `git init` 快照仓库**；真正初始化 `Global.Path.data/snapshot/<project-id>` 这个内部 Git 仓库，要等后面第一次调用 `Snapshot.track()`。
+- `EventRoutes 把 bus event 转成 SSE`
+  这一行严格来说已经不是“加载组件”，而是把前面这些子系统后续发出的 bus 事件，经 `/event` 路由转成 SSE 流，持续推给 TUI 主线程。
+
+所以更准确的理解应该是：
+
+- `Project.fromDirectory()` 负责建立 instance 身份
+- `Plugin / ShareNext / Format / FileWatcher / Vcs` 这几步主要是在挂订阅和准备运行态
+- `File.init()` 负责首屏最依赖的文件索引缓存
+- `LSP / Snapshot` 在启动阶段更多是“把服务准备好”，真正重操作会继续延后
+
 ---
 
 ## 3. 分发层：`bin/opencode` 只是二进制 shim
@@ -123,6 +155,17 @@ entrypoints: ["./src/index.ts", parserWorker, workerPath]
 3. 注册命令并 parse。
 
 不过在 parse 之前，模块图本身已经带来了一些顶层副作用。
+
+这里先补一个术语说明：本文里的 **XDG 路径**，指的是遵循 `XDG(X Desktop Group) Base Directory Specification` 的那组**用户级目录约定**，用来区分应用的持久数据、缓存、配置和运行状态。后文看到的 `data`、`cache`、`config`、`state`、`log`、`bin`，本质上都是 OpenCode 先计算出来的一组“应用专属目录”。如果只看直觉，可以把它理解成：
+
+- `data`：长期保存的数据
+- `cache`：可重建、可清理的缓存
+- `config`：配置文件
+- `state`：运行状态
+- `log`：日志输出
+- `bin`：工具二进制或托管可执行文件
+
+在类 Unix 环境里，这些目录通常会落在类似 `~/.local/share`、`~/.cache`、`~/.config`、`~/.local/state` 这一类位置。所以下面说“先算 XDG 路径”，本质就是“先把 OpenCode 自己要用的那几类根目录定下来”。
 
 ### 4.1 import 阶段的隐式初始化
 
@@ -735,7 +778,7 @@ worker runtime 第一次真正触发 `Config.get()` 的地方，就是 `Plugin.i
 
 ---
 
-## 16. 一句话总结
+## 16. 把整条启动链压成一句代码级结论
 
 默认 `opencode` 启动不是“一个 CLI 直接显示 UI”，而是：
 

@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="c1755966-9790-4c78-ba46-5c4711b5c70f" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/opencode_kickoff/A00-overview.md" beforeDir="false" afterPath="$PROJECT_DIR$/opencode_kickoff/A00-overview.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/opencode_kickoff/B02-context.md" beforeDir="false" afterPath="$PROJECT_DIR$/opencode_kickoff/B02-context.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/opencode_kickoff/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/opencode_kickoff/README.md" afterDir="false" />
-    </list>
+    <list default="true" id="c1755966-9790-4c78-ba46-5c4711b5c70f" name="更改" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -36,7 +35,11 @@
     "codeWithMe.voiceChat.enabledByDefault": "false",
     "git-widget-placeholder": "master",
     "ignore.virus.scanning.warn.message": "true",
-    "last_opened_file_path": "D:/coding/agent-study",
+    "last_opened_file_path": "$HOME/coding/agent-study",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
     "settings.editor.selected.configurable": "preferences.pluginManager",
     "vue.rearranger.settings.migration": "true"
@@ -58,7 +61,11 @@
       <updated>1774603174702</updated>
       <workItem from="1774603176927" duration="35000" />
       <workItem from="1774603221439" duration="45000" />
+      <workItem from="1774667120840" duration="648000" />
     </task>
     <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
   </component>
 </project>

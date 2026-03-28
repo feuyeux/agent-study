@@ -269,7 +269,7 @@ Global.Path.cache/skills/<skill-name>/*
 
 ---
 
-## 9. B10 的核心结论
+## 9. 把 B10 压成一句代码级结论
 
 OpenCode 当前的 Skill 系统可以压成四句话：
 

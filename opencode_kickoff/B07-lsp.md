@@ -267,7 +267,7 @@ TUI 侧在 `packages/opencode/src/cli/cmd/tui/context/sync.tsx:343-345` 监听 `
 
 ---
 
-## 12. B07 的核心结论
+## 12. 把 B07 压成一句代码级结论
 
 OpenCode 当前对 LSP 的使用方式，可以压成四句话：
 

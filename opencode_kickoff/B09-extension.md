@@ -254,7 +254,7 @@ Permission.evaluate("skill", skill.name, agent.permission)
 
 ---
 
-## 8. B09 的核心结论
+## 8. 把 B09 压成一句代码级结论
 
 OpenCode 当前的扩展系统可以压成四句话：
 
