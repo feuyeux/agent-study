@@ -173,6 +173,7 @@ flowchart LR
 | [B11](./B11-worktree.md) | `worktree/*`、`project/project.ts`、`project/instance.ts` | `sandbox` 在 OpenCode 里的真实语义，以及 Git worktree 的发现、创建与边界约束。 |
 | [B12](./B12-memory.md) | `session/summary.ts`、`snapshot/*` | Session 级别文件变更追踪与摘要管理，"agent 记忆"的真正实现。 |
 | [B13](./B13-mcp.md) | `mcp/index.ts`、`mcp/auth.ts`、`mcp/oauth-*.ts` | MCP 五状态机、OAuth 认证、远程/本地 server 连接、tool/prompt/resource 投影。 |
+| [B14](./B14-observability.md) | `util/log.ts`、`bus/*`、`effect/*`、`session/status.ts` | 结构化日志、typed Bus 事件、GlobalBus 广播、SessionStatus 状态追踪与 effect 实例作用域。 |
 
 ### 7.3 C 线：动手实战与补充专题
 
@@ -214,8 +215,8 @@ flowchart LR
 1. 先读 [A00](./A00-mainline-index.md) 和 [A01](./A01-entry-transports.md)，把默认启动链的“入口到 server”先对齐。
 2. 再读 [A02](./A02-server-routing.md) 到 [A05](./A05-stream-processor.md)，把 `Server -> prompt -> loop` 的固定骨架吃透。
 3. 接着读 [A06](./A06-llm-request.md) 和 [A07](./A07-durable-state.md)，把“请求怎样发出去、结果怎样落回来”串完整。
-4. 最后回看 [B01](./B01-model.md) 到 [B11](./B11-worktree.md)，补对象模型、上下文工程、韧性、基础设施、LSP、启动配置、扩展和 worktree 机制。
-5. [B12](./B12-memory.md) 和 [B13](./B13-mcp.md) 补充 memory 追踪和 MCP 协议实现细节；[C01](./C01-debugging.md) 是动手调试篇，[C02](./C02-plugin.md) 深挖 plugin 内部节点，按需跳转。
+4. 最后回看 [B01](./B01-model.md) 到 [B13](./B13-mcp.md)，补对象模型、上下文工程、韧性、基础设施、LSP、启动配置、扩展、MCP 和 worktree 机制。
+5. [B14](./B14-observability.md) 补充可观测性底层（Log/Bus/SessionStatus/effect）；[C01](./C01-debugging.md) 是动手调试篇，[C02](./C02-plugin.md) 深挖 plugin 内部节点，按需跳转。
 
 ---
 
