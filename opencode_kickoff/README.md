@@ -165,15 +165,15 @@ flowchart LR
 | [B03](./B03-orchestration.md) | `task.ts`、`prompt.ts`、`compaction.ts` | Subagent、Command、Compaction 为什么都没绕开主骨架。 |
 | [B04](./B04-resilience.md) | `retry.ts`、`revert.ts`、`permission`、`question` | 失败、自愈、回滚和交互式阻塞怎样挂回主线。 |
 | [B05](./B05-infra.md) | `storage/db.ts`、`session.sql.ts`、`bus`、`instance` | durable runtime 依赖的基础设施语义是什么。 |
-| [B06](./B06-philosophy.md) | `prompt.ts`、`llm.ts`、`message-v2.ts`、`agent.ts` | “固定骨架 + 晚绑定”在代码里具体体现在哪些硬边界和晚决策点。 |
+| [B06](./B06-philosophy.md) | `util/log.ts`、`bus/*`、`effect/*`、`session/status.ts` | 结构化日志、typed Bus 事件、GlobalBus 广播、SessionStatus 状态追踪与 effect 实例作用域。 |
 | [B07](./B07-lsp.md) | `lsp/*`、`tool/*`、`server/*` | LSP 怎样成为 runtime 的代码理解和诊断底座。 |
 | [B08](./B08-startup-config.md) | `global/*`、`config/*`、`project/bootstrap.ts` | 项目级 runtime 在真正进入 loop 之前还要完成哪些加载动作。 |
 | [B09](./B09-extension.md) | `plugin/*`、`mcp/*`、`tool/registry.ts`、`command/*`、`skill/*` | 扩展能力很多，但为什么没有长出第二条执行骨架。 |
 | [B10](./B10-skill.md) | `skill/*`、`system.ts`、`tool/skill.ts` | Skill 怎样被发现、授权、注入 system prompt、tool 和 command。 |
 | [B11](./B11-worktree.md) | `worktree/*`、`project/project.ts`、`project/instance.ts` | `sandbox` 在 OpenCode 里的真实语义，以及 Git worktree 的发现、创建与边界约束。 |
-| [B12](./B12-memory.md) | `session/summary.ts`、`snapshot/*` | Session 级别文件变更追踪与摘要管理，"agent 记忆"的真正实现。 |
+| [B12](./B12-memory.md) | `session/summary.ts`、`snapshot/*` | Session 级别文件变更追踪与摘要管理，”agent 记忆”的真正实现。 |
 | [B13](./B13-mcp.md) | `mcp/index.ts`、`mcp/auth.ts`、`mcp/oauth-*.ts` | MCP 五状态机、OAuth 认证、远程/本地 server 连接、tool/prompt/resource 投影。 |
-| [B14](./B14-observability.md) | `util/log.ts`、`bus/*`、`effect/*`、`session/status.ts` | 结构化日志、typed Bus 事件、GlobalBus 广播、SessionStatus 状态追踪与 effect 实例作用域。 |
+| [B14](./B14-observability.md) | `prompt.ts`、`llm.ts`、`message-v2.ts`、`agent.ts` | “固定骨架 + 晚绑定”在代码里具体体现在哪些硬边界和晚决策点；B 系列阅读完成后的设计哲学总结。 |
 
 ### 7.3 C 线：动手实战与补充专题
 
@@ -215,7 +215,8 @@ flowchart LR
 1. 先读 [A00](./A00-mainline-index.md) 和 [A01](./A01-entry-transports.md)，把默认启动链的“入口到 server”先对齐。
 2. 再读 [A02](./A02-server-routing.md) 到 [A05](./A05-stream-processor.md)，把 `Server -> prompt -> loop` 的固定骨架吃透。
 3. 接着读 [A06](./A06-llm-request.md) 和 [A07](./A07-durable-state.md)，把“请求怎样发出去、结果怎样落回来”串完整。
-4. 最后回看 [B01](./B01-model.md) 到 [B13](./B13-mcp.md)，补对象模型、上下文工程、韧性、基础设施、LSP、启动配置、扩展、MCP 和 worktree 机制。
+4. 回看 [B01](./B01-model.md) 到 [B13](./B13-mcp.md)，按顺序补对象模型、上下文工程、韧性、基础设施、可观测性、LSP、启动配置、扩展、Skill、Worktree、Memory 和 MCP。
+5. [B14](./B14-observability.md) 是设计哲学总结：读完所有实现细节后，回看 B14 理解"为什么 OpenCode 的骨架是固定的、各层扩展为什么都是晚绑定"。
 5. [B14](./B14-observability.md) 补充可观测性底层（Log/Bus/SessionStatus/effect）；[C01](./C01-debugging.md) 是动手调试篇，[C02](./C02-plugin.md) 深挖 plugin 内部节点，按需跳转。
 
 ---
