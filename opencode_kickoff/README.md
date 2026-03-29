@@ -170,8 +170,18 @@ flowchart LR
 | [B08](./B08-startup-config.md) | `global/*`、`config/*`、`project/bootstrap.ts` | 项目级 runtime 在真正进入 loop 之前还要完成哪些加载动作。 |
 | [B09](./B09-extension.md) | `plugin/*`、`mcp/*`、`tool/registry.ts`、`command/*`、`skill/*` | 扩展能力很多，但为什么没有长出第二条执行骨架。 |
 | [B10](./B10-skill.md) | `skill/*`、`system.ts`、`tool/skill.ts` | Skill 怎样被发现、授权、注入 system prompt、tool 和 command。 |
+| [B11](./B11-worktree.md) | `worktree/*`、`project/project.ts`、`project/instance.ts` | `sandbox` 在 OpenCode 里的真实语义，以及 Git worktree 的发现、创建与边界约束。 |
+| [B12](./B12-memory.md) | `session/summary.ts`、`snapshot/*` | Session 级别文件变更追踪与摘要管理，"agent 记忆"的真正实现。 |
+| [B13](./B13-mcp.md) | `mcp/index.ts`、`mcp/auth.ts`、`mcp/oauth-*.ts` | MCP 五状态机、OAuth 认证、远程/本地 server 连接、tool/prompt/resource 投影。 |
 
-> 目录里的 [B08-plugin](./B08-plugin.md) 是保留旧编号的补充稿，不参与主编号，但适合在 [B09](./B09-extension.md) 之后继续深挖 plugin runtime。
+### 7.3 C 线：动手实战与补充专题
+
+| 篇 | 内容定位 | 补充阅读 |
+| --- | --- | --- |
+| [C01](./C01-debugging.md) | VS Code / JetBrains 调试配置 | 如何对 `packages/opencode` 源码设置断点、调试具体命令，以及一边断点一边看日志。 |
+| [C02](./C02-plugin.md) | Plugin 系统深挖：runtime 内部受信扩展层的全部 hook 节点 | 适合在读完 [B09](./B09-extension.md) 之后继续深究 plugin 内部。 |
+
+> A 线顺主链路，B 线讲深度专题，C 线是动手实战与补充专题。三线并行，读者按需跳转。
 
 ---
 
@@ -204,7 +214,8 @@ flowchart LR
 1. 先读 [A00](./A00-mainline-index.md) 和 [A01](./A01-entry-transports.md)，把默认启动链的“入口到 server”先对齐。
 2. 再读 [A02](./A02-server-routing.md) 到 [A05](./A05-stream-processor.md)，把 `Server -> prompt -> loop` 的固定骨架吃透。
 3. 接着读 [A06](./A06-llm-request.md) 和 [A07](./A07-durable-state.md)，把“请求怎样发出去、结果怎样落回来”串完整。
-4. 最后回看 [B01](./B01-model.md) 到 [B10](./B10-skill.md)，补对象模型、上下文工程、韧性、基础设施，以及 LSP、启动配置和扩展系统。
+4. 最后回看 [B01](./B01-model.md) 到 [B11](./B11-worktree.md)，补对象模型、上下文工程、韧性、基础设施、LSP、启动配置、扩展和 worktree 机制。
+5. [B12](./B12-memory.md) 和 [B13](./B13-mcp.md) 补充 memory 追踪和 MCP 协议实现细节；[C01](./C01-debugging.md) 是动手调试篇，[C02](./C02-plugin.md) 深挖 plugin 内部节点，按需跳转。
 
 ---
 

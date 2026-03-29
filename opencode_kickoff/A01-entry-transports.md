@@ -133,6 +133,56 @@ await sdk.event.subscribe()   // 订阅 SSE
 
 这就是 OpenCode TUI 的一个核心设计：**UI 永远只面对 session 协议，不面对 session 实现。**
 
+### 4.4 TUI 首屏加载：不是一次性全量渲染
+
+TUI 主线程执行 `render()` 时，还要经历两层启动：先装配 Provider 树，再做分阶段同步。
+
+#### 4.4.1 render 前有一次终端背景探测
+
+主线程会先发一个 OSC 11 查询，用来判断当前终端主题更接近 `dark` 还是 `light`：
+
+1. 临时把 `stdin` 设成 raw mode
+2. 发送 `\x1b]11;?\x07`
+3. 等待终端回传颜色并计算亮度
+4. 超时则默认 `dark`
+
+#### 4.4.2 Provider 树分四层
+
+`render()` 时挂上的 Provider 可以粗略分成四层：
+
+1. 基础运行层：`ArgsProvider`、`ExitProvider`、`KVProvider`、`ToastProvider`、`RouteProvider`
+2. 通信与同步层：`TuiConfigProvider`、`SDKProvider`、`SyncProvider`
+3. 本地 UI 状态层：`ThemeProvider`、`LocalProvider`、`KeybindProvider`、`DialogProvider`
+4. 命令与历史层：`CommandProvider`、`FrecencyProvider`、`PromptHistoryProvider`、`PromptRefProvider`
+
+#### 4.4.3 `SDKProvider`：UI 侧的通信入口
+
+`SDKProvider` 负责创建 `createOpencodeClient(...)` 并维持事件流。关键行为包括：
+
+- 默认 `baseUrl` 是 `http://opencode.internal`
+- 会把当前 `directory` 一并传给 SDK
+- 没有 `props.events` 时自己走 SSE；已有时直接消费 worker RPC 事件
+- 事件先进入 16ms 批处理队列，再批量写入 UI
+- 当前 session 切换 workspace 时，`setWorkspace()` 会重建 client，并让 worker 重启 event stream
+
+#### 4.4.4 `SyncProvider.bootstrap()`：分两段把首屏数据灌进来
+
+首屏同步分两阶段：
+
+**阻塞阶段**会并发请求：
+1. `config.providers`
+2. `provider.list`
+3. `app.agents`
+4. `config.get`
+5. 如果带了 `--continue`，还会阻塞等待 `session.list({ start: 30 days ago })`
+
+只有这些返回后，状态才会从 `loading` 切到 `partial`。
+
+**后台非阻塞阶段**继续拉：
+`session.list` / `command.list` / `lsp.status` / `mcp.status` / `experimental.resource.list` / `formatter.status` / `session.status` / `provider.auth` / `vcs.get` / `path.get` / `workspace.list`
+
+全部完成后才进入 `complete`。这也是首页能较快可交互的原因。
+
 ---
 
 ## 5. `attach`：远端 TUI 不是另一套产品，只是 transport 换成 HTTP

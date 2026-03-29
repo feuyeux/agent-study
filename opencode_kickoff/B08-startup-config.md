@@ -187,6 +187,35 @@
 
 所以 bootstrap 的风格是：**固定装配、延迟执行。**
 
+### 9.1 `Plugin.init()`：完整 `Config.get()` 的真正入口
+
+worker runtime 第一次真正触发 `Config.get()` 的地方，就是 `Plugin.init()`。它会：
+
+1. 创建内嵌 SDK client，`fetch` 仍然指向 `Server.Default().fetch(...)`
+2. 读取完整配置 `Config.get()`
+3. 先加载内建插件，如 `CodexAuthPlugin`、`CopilotAuthPlugin`、`GitlabAuthPlugin`、`PoeAuthPlugin`
+4. 如果配置里声明了外部插件
+   - 先 `Config.waitForDependencies()`
+   - 必要时给配置目录写 `package.json`
+   - 执行 `bun install`
+   - 再 `import(plugin)` 动态加载
+5. 调用插件的 `config` hook
+6. 订阅总线事件，把 bus event 交给插件的 `event` hook
+
+因此插件初始化本身也是完整配置系统、依赖安装、动态模块加载的入口。
+
+### 9.2 其他各步的延迟执行细节
+
+| 步骤 | 启动时真正在做什么 | 延迟到何时 |
+| --- | --- | --- |
+| `Format.init()` | 读取 `Config.get().formatter`，建立 formatter 表，并订阅 `File.Event.Edited` | 真正格式化在文件编辑时按扩展名触发 |
+| `LSP.init()` | 读取配置、建立可用 LSP 列表、记录禁用项和扩展名映射 | LSP 子进程按文件访问懒启动 |
+| `File.init()` | 建立文件搜索缓存；git 项目下通过 `Ripgrep.files()` 扫描文件并缓存目录层级 | 文件内容读取在具体 tool call 时 |
+| `FileWatcher.init()` | 加载 `@parcel/watcher` 平台绑定，订阅项目目录变化；git 项目额外订阅 `.git` | 文件变化事件触发后续处理 |
+| `Vcs.init()` | 读取当前 branch，监听 `HEAD` 变化 | 分支变化时发布 `vcs.branch.updated` |
+| `Snapshot.init()` | 为当前 project 维护独立 snapshot gitdir：`<Global.Path.data>/snapshot/<project.id>`，建立每小时一次 `git gc --prune=7.days` 清理循环 | 真正写快照在 `Snapshot.track()` 时 |
+| `ShareNext.init()` | 订阅 `session.updated`、`message.updated`、`message.part.updated`、`session.diff` 事件 | 真正 share sync 在会话变化时触发 |
+
 ---
 
 ## 10. 启动与配置系统为什么是 OpenCode 骨架的一部分

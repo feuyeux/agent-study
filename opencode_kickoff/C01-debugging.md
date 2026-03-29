@@ -1,8 +1,8 @@
-# OpenCode 断点调试指南
+# OpenCode 深度专题 C01：断点调试指南
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 
-本文面向 `packages/opencode` 的源码调试，当前仓库里真正的 CLI 入口是 `packages/opencode/src/index.ts`；根目录 `package.json` 里的 `dev` 脚本，本质上也是从这里启动。
+B 系列前面讲的都是代码架构和执行逻辑，这篇换一个工程视角：如何在 VS Code 和 JetBrains 里对 `packages/opencode` 源码设置断点、调试具体命令、以及一边断点一边看日志。这对想深入主链路或排查运行时问题的人来说是实用工具。
 
 ## 调试前准备
 
