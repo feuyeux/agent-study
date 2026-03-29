@@ -147,14 +147,14 @@ flowchart LR
 
 | 篇 | 对应代码跳点 | 真正回答的问题 |
 | --- | --- | --- |
-| [A00](./A00-overview.md) | 全链路索引 | 如果把默认执行主线压成一条链，A 系列各篇分别卡在哪个函数交接点。 |
-| [A01](./A01-entry.md) | `index.ts`、`run.ts`、`cli/cmd/tui/*`、桌面壳 | 各宿主怎样收束成同一套 HTTP/SSE contract。 |
-| [A02](./A02-server.md) | `server/server.ts`、`server/routes/session.ts` | 请求怎样获得 `WorkspaceContext` / `Instance`，再进入 session runtime。 |
-| [A03](./A03-prompt.md) | `session/prompt.ts` | 用户输入怎样被编译成 durable user message / parts。 |
-| [A04](./A04-orchestrator.md) | `session/prompt.ts`、`session/processor.ts` | `prompt`、`loop`、`processor` 三层究竟在哪分工。 |
-| [A05](./A05-loop.md) | `session/prompt.ts` | `loop()` 内部的 subtask / compaction / overflow / normal round 分支怎样展开。 |
-| [A06](./A06-llm.md) | `session/llm.ts`、`session/system.ts`、`provider/provider.ts` | 本轮历史怎样在进入模型前被编译成 provider 请求。 |
-| [A07](./A07-state.md) | `session/processor.ts`、`session/index.ts`、`message-v2.ts` | 模型流事件怎样写回 durable state 并重新投影给前端。 |
+| [A00](./A00-mainline-index.md) | 全链路索引 | 如果把默认执行主线压成一条链，A 系列各篇分别卡在哪个函数交接点。 |
+| [A01](./A01-entry-transports.md) | `index.ts`、`run.ts`、`cli/cmd/tui/*`、桌面壳 | 各宿主怎样收束成同一套 HTTP/SSE contract。 |
+| [A02](./A02-server-routing.md) | `server/server.ts`、`server/routes/session.ts` | 请求怎样获得 `WorkspaceContext` / `Instance`，再进入 session runtime。 |
+| [A03](./A03-prompt-compilation.md) | `session/prompt.ts` | 用户输入怎样被编译成 durable user message / parts。 |
+| [A04](./A04-session-loop.md) | `session/prompt.ts` | `loop()` 如何从 durable history 推导下一轮动作。 |
+| [A05](./A05-stream-processor.md) | `session/processor.ts` | `SessionProcessor.process()` 如何把单轮流事件写回 durable history。 |
+| [A06](./A06-llm-request.md) | `session/llm.ts`、`session/system.ts`、`provider/provider.ts` | 本轮历史怎样在进入模型前被编译成 provider 请求。 |
+| [A07](./A07-durable-state.md) | `session/processor.ts`、`session/index.ts`、`message-v2.ts` | 模型流事件怎样写回 durable state 并重新投影给前端。 |
 
 ### 7.2 B 线：解释这条调用链为什么能成立
 
@@ -201,9 +201,9 @@ flowchart LR
 
 ## 9. 推荐阅读顺序
 
-1. 先读 [A00](./A00-overview.md) 和 [A01](./A01-entry.md)，把默认启动链的“入口到 server”先对齐。
-2. 再读 [A02](./A02-server.md) 到 [A05](./A05-loop.md)，把 `Server -> prompt -> loop` 的固定骨架吃透。
-3. 接着读 [A06](./A06-llm.md) 和 [A07](./A07-state.md)，把“请求怎样发出去、结果怎样落回来”串完整。
+1. 先读 [A00](./A00-mainline-index.md) 和 [A01](./A01-entry-transports.md)，把默认启动链的“入口到 server”先对齐。
+2. 再读 [A02](./A02-server-routing.md) 到 [A05](./A05-stream-processor.md)，把 `Server -> prompt -> loop` 的固定骨架吃透。
+3. 接着读 [A06](./A06-llm-request.md) 和 [A07](./A07-durable-state.md)，把“请求怎样发出去、结果怎样落回来”串完整。
 4. 最后回看 [B01](./B01-model.md) 到 [B10](./B10-skill.md)，补对象模型、上下文工程、韧性、基础设施，以及 LSP、启动配置和扩展系统。
 
 ---

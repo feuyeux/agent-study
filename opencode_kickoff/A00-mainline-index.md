@@ -2,7 +2,7 @@
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对。
 
-本篇不是泛化索引，而是把 A 系列每一篇都钉回默认执行主线上的具体代码跳点。只要沿着这些跳点读，整条链会非常稳定：
+这份索引把 A 系列各篇文档对应到默认执行主线上的具体代码跳点。沿着这些跳点展开，读者可以稳定地追踪 OpenCode 的完整执行链：
 
 ```text
 opencode/package.json
@@ -20,19 +20,19 @@ opencode/package.json
 
 ---
 
-## 1. A 系列其实就是 7 个代码交接点
+## 1. A 系列覆盖 7 个代码交接点
 
-| 篇 | 主文件 | 真正盯住的交接点 | 这一跳回答什么 |
+| 篇 | 主文件 | 核心交接点 | 这一跳回答什么 |
 | --- | --- | --- | --- |
-| [A01](./A01-entry.md) | `src/index.ts`、`cli/cmd/run.ts`、`cli/cmd/tui/*`、桌面壳 | 入口怎样收束成同一套 HTTP/SSE contract | CLI/TUI/Web/Attach/ACP/Desktop 为什么最后都能打到同一个 server |
-| [A02](./A02-server.md) | `server/server.ts`、`server/routes/session.ts` | 请求怎样获得 `WorkspaceContext` / `Instance` | Hono app 怎样完成认证、实例绑定、路由装配并进入 `/session` |
-| [A03](./A03-prompt.md) | `session/prompt.ts` | `POST /session/:id/message` 怎样变成 durable user message | text/file/agent/subtask parts 怎样被编译、改写和落库 |
-| [A04](./A04-orchestrator.md) | `session/prompt.ts`、`session/processor.ts` | `prompt -> loop -> processor` 三层边界 | 谁负责写输入、谁负责判分支、谁负责消费单轮模型流 |
-| [A05](./A05-loop.md) | `session/prompt.ts` | `loop()` 里的硬编码分支顺序 | pending subtask、compaction、overflow、normal round 怎样逐个落到代码里 |
-| [A06](./A06-llm.md) | `session/llm.ts`、`session/system.ts`、`provider/provider.ts` | 进入模型前的最后一次编译 | provider prompt、system、tools、headers、options、middleware 怎样拼起来 |
-| [A07](./A07-state.md) | `session/processor.ts`、`session/index.ts`、`message-v2.ts` | 模型流怎样写回 durable state | reasoning/text/tool/step/patch 事件怎样落库并重新投影给前端 |
+| [A01](./A01-entry-transports.md) | `src/index.ts`、`cli/cmd/run.ts`、`cli/cmd/tui/*`、桌面壳 | 入口怎样收束成同一套 HTTP/SSE contract | CLI/TUI/Web/Attach/ACP/Desktop 为什么最后都能打到同一个 server |
+| [A02](./A02-server-routing.md) | `server/server.ts`、`server/routes/session.ts` | 请求怎样获得 `WorkspaceContext` / `Instance` | Hono app 怎样完成认证、实例绑定、路由装配并进入 `/session` |
+| [A03](./A03-prompt-compilation.md) | `session/prompt.ts` | `POST /session/:id/message` 怎样变成 durable user message | text/file/agent/subtask parts 怎样被编译、改写和落库 |
+| [A04](./A04-session-loop.md) | `session/prompt.ts` | `loop()` 如何从 durable history 推导下一轮动作 | 并发占位、历史回放、subtask、compaction、overflow、normal round 怎样串成一台状态机 |
+| [A05](./A05-stream-processor.md) | `session/processor.ts` | `SessionProcessor.process()` 如何消费单轮流事件 | reasoning、text、tool、step、patch、error 怎样写回 durable history |
+| [A06](./A06-llm-request.md) | `session/llm.ts`、`session/system.ts`、`provider/provider.ts` | 进入模型前的最后一次编译 | provider prompt、system、tools、headers、options、middleware 怎样拼起来 |
+| [A07](./A07-durable-state.md) | `session/processor.ts`、`session/index.ts`、`message-v2.ts` | 模型流怎样写回 durable state | reasoning/text/tool/step/patch 事件怎样落库并重新投影给前端 |
 
-所以 A 系列不是“7 个独立话题”，而是 7 个固定交接点。
+A 系列围绕这 7 个固定交接点组织。
 
 ---
 
@@ -61,7 +61,7 @@ opencode/package.json
 10. `session/index.ts`、`message-v2.ts`
     `Session.updateMessage()` / `updatePart()` 把结果写回 SQLite，再通过 `Bus` / SSE 投影出去。
 
-只要记住这条链，后面的章节就不是“很多功能点”，而是“每一步把上一跳产物改造成下一跳输入”。
+记住这条链后，后续章节会依次说明每一步如何把上一跳产物改造成下一跳输入。
 
 ---
 
@@ -93,13 +93,13 @@ sequenceDiagram
     Proc-->>SPLoop: continue / compact / stop
 ```
 
-这张图最应该看的不是“模块名”，而是每一步的 durable 产物：
+阅读这张图时，建议重点关注每一步生成的 durable 产物：
 
 1. 入口层产出的是一个 HTTP/RPC 请求。
 2. `prompt()` 产出的是 durable user message / parts。
 3. `loop()` 产出的是本轮要执行的分支，以及一条 assistant skeleton。
 4. `processor` 产出的是一串 durable parts 和 assistant finish/error/tokens。
-5. 前端订阅到的不是临时内存态，而是数据库写回后的事件投影。
+5. 前端订阅到的是数据库写回后的事件投影。
 
 ---
 
@@ -167,9 +167,9 @@ A 系列只盯主链，不会把这些专题塞进每一篇里反复展开：
 
 ## 7. 推荐阅读顺序
 
-1. 先读 [A01](./A01-entry.md) 和 [A02](./A02-server.md)，把 transport 边界和 runtime 边界切开。
-2. 再读 [A03](./A03-prompt.md) 到 [A05](./A05-loop.md)，把 `prompt -> loop -> processor` 的交接链吃透。
-3. 接着看 [A06](./A06-llm.md) 和 [A07](./A07-state.md)，理解“请求怎样发出去、结果怎样落回来”。
+1. 先读 [A01](./A01-entry-transports.md) 和 [A02](./A02-server-routing.md)，把 transport 边界和 runtime 边界切开。
+2. 再读 [A03](./A03-prompt-compilation.md) 到 [A05](./A05-stream-processor.md)，把 `prompt -> loop -> processor` 的交接链吃透。
+3. 接着看 [A06](./A06-llm-request.md) 和 [A07](./A07-durable-state.md)，理解“请求怎样发出去、结果怎样落回来”。
 4. 最后回看 [B01](./B01-model.md) 到 [B10](./B10-skill.md)，补对象模型、上下文工程、韧性、基础设施，以及 LSP、启动配置和扩展系统。
 
 ---

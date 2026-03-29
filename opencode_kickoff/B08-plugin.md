@@ -2,7 +2,7 @@
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 >
-> 说明：这篇文档写于 B 线重构之前，因此保留了旧编号 `B08`。当前主线阅读顺序请以 [README](./README.md) / [A00](./A00-overview.md) 中的 `B01-B10` 为准：启动与配置装配请读 [B08-startup-config](./B08-startup-config.md)，扩展面总览请读 [B09](./B09-extension.md)，本文只负责把 plugin 本身挖深。
+> 说明：这篇文档写于 B 线重构之前，因此保留了旧编号 `B08`。当前主线阅读顺序请以 [README](./README.md) / [A00](./A00-mainline-index.md) 中的 `B01-B10` 为准：启动与配置装配请读 [B08-startup-config](./B08-startup-config.md)，扩展面总览请读 [B09](./B09-extension.md)，本文只负责把 plugin 本身挖深。
 
 如果不单独把 plugin 系统拎出来，很容易把 OpenCode 理解成“核心 runtime 固定，插件只是顺手挂几个工具”。当前实现不是这个结构。plugin 更像是 **runtime 内部的受信扩展层**：它不在外围做代理，而是直接插进 provider 装配、认证、tool 定义、session prompt 编译、LLM 请求、compaction 和 shell 环境构造这些核心节点里。
 
@@ -548,4 +548,3 @@ OpenCode 的 plugin 体系本质上不是“可插拔附件”，而是 **runtim
 **它要的不是“插件市场”，而是“把 runtime 做成可在内部深度改写的 agent 平台”。**
 
 如果把本文放回主线里理解，可以把它看成 [B08-startup-config](./B08-startup-config.md) 的启动时机补充，以及 [B09](./B09-extension.md) 的 plugin 细化稿。
-

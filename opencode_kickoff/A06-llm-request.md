@@ -2,7 +2,7 @@
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 
-到了 A06，真正的模型调用才开始出现。在 `v1.3.2` 中，大模型请求不是 `processor` 里随手拼个 payload 发出去，而是经过了 system prompt 选择、环境注入、指令文件加载、tool set 包装、provider 参数合并、兼容补丁和 AI SDK middleware 多层处理。
+A06 进入模型请求出站链路。在 `v1.3.2` 中，大模型请求会经过 system prompt 选择、环境注入、指令文件加载、tool set 包装、provider 参数合并、兼容补丁和 AI SDK middleware 多层处理。
 
 ---
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 2. system prompt 不是一坨字符串，而是四层来源的叠加
+## 2. system prompt 由四层来源叠加组成
 
 在 `v1.3.2` 中，system prompt 分两段生成。
 
@@ -47,7 +47,7 @@
 2. 环境和指令文件在它上面叠。
 3. 用户显式传进来的 `system` 才是最后一层补丁。
 
-所以 OpenCode 的 system prompt 不是固定模板，而是一套按层级拼接的编译产物。
+OpenCode 的 system prompt 由多层来源按固定顺序拼接。
 
 ---
 
@@ -62,7 +62,7 @@
 5. `trinity` 走 `PROMPT_TRINITY`
 6. 否则走 `PROMPT_DEFAULT`
 
-这说明 provider prompt 不是“从 config 里任意挑一份模版”，而是 runtime 里写死的模型家族策略。
+provider prompt 的选择由 runtime 中的模型家族策略直接决定。
 
 ---
 
@@ -79,7 +79,7 @@
 5. 平台
 6. 当天日期
 
-这些信息都不是 UI 侧补的，而是服务端 runtime 在发请求前最后一刻插进去的。
+这些信息会在服务端 runtime 发请求前注入 system。
 
 ### 4.2 指令层
 
@@ -89,7 +89,7 @@
 2. 全局 `~/.config/opencode/AGENTS.md` 或 `~/.claude/CLAUDE.md`
 3. `config.instructions` 里声明的额外文件或 URL
 
-因此，OpenCode 当前的“项目级 agent 指令”并不是在 CLI 入口读取，而是在 LLM 调用前统一拉取并塞进 system prompt。
+项目级 agent 指令会在 LLM 调用前统一拉取并写入 system prompt。
 
 ---
 
@@ -111,7 +111,7 @@
 3. agent 自带选项
 4. 当前 user message 选择的 variant
 
-这不是“每层随便覆盖一点”，而是一条稳定的 precedence chain。
+这条 precedence chain 稳定且清晰。
 
 ---
 
@@ -130,7 +130,7 @@
 4. 统一插入 plugin `tool.execute.before/after` 钩子。
 5. 把 MCP tool 结果整理成文本输出和附件。
 
-所以在 `LLM.stream()` 看到的 `input.tools`，已经不是裸工具，而是被 runtime 包装过的一套 AI SDK Tool。
+`LLM.stream()` 接收到的 `input.tools` 已经是一套经过 runtime 包装的 AI SDK Tool。
 
 ### 6.2 第二层：`llm.ts` 再按权限裁一次
 
@@ -142,14 +142,14 @@
 
 再删掉被禁用的工具。
 
-因此工具可用性不是一处决定，而是：
+工具可用性分两步完成：
 
 1. 先生成所有候选工具。
 2. 再在发请求前做一次 late pruning。
 
 ---
 
-## 7. `LLM.stream()` 里真正的 provider 兼容层有四块
+## 7. `LLM.stream()` 里的 provider 兼容层有四块
 
 ### 7.1 OpenAI OAuth 走 `instructions` 字段，不拼 system messages
 
@@ -158,7 +158,7 @@
 1. `options.instructions = system.join("\n")`
 2. `messages` 不再手动 prepend `system` message，而是直接用 `input.messages`
 
-这不是风格差异，而是兼容 provider 协议差异。
+这一步用于兼容 provider 协议差异。
 
 ### 7.2 LiteLLM/Anthropic 代理兼容：必要时补一个 `_noop` 工具
 
@@ -172,7 +172,7 @@
 2. 调本地 `tools[toolName].execute(...)`
 3. 再把 result/output/title/metadata 返回给 workflow 服务
 
-也就是说，GitLab workflow 不是另一套工具执行系统，而是把 workflow tool call 反向桥接回 OpenCode 的工具系统。
+GitLab workflow 会把远端 workflow tool call 反向桥接回 OpenCode 的工具系统。
 
 ### 7.4 tool call repair：大小写修复或打回 `invalid`
 
@@ -192,7 +192,7 @@
 1. 取到 `args.params.prompt`
 2. 再用 `ProviderTransform.message(...)` 做 provider-specific prompt 转换
 
-所以真正发给 provider 的 prompt，最后一刻还会再过一遍 provider transform。
+发给 provider 的 prompt 会在最后一刻再经过一次 provider transform。
 
 这也是 OpenCode 当前“固定骨架 + 最晚绑定”的一个典型例子。
 
@@ -220,7 +220,7 @@
 
 前提是 providerID 以 `opencode` 开头。
 
-所以 A06 的终点，不是“把字符串发给模型”，而是把整份 session runtime 上下文压缩成一次 provider-aware 的 `streamText()` 调用。
+A06 的终点是一轮 provider-aware 的 `streamText()` 调用，整份 session runtime 上下文已经在这里压缩完成。
 
 ---
 

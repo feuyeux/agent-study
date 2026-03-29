@@ -29,7 +29,7 @@ HTTP 请求
   ▼
 第三阶段：业务路由层（依赖 Instance 的 API 面）
   /project → /session → /provider → /event → /mcp → /tui …
-  从这里开始，请求才真正属于某个 session 或 project。
+  从这里开始，请求进入某个 session 或 project 的业务域。
 ```
 
 三层的核心区别在于：**第一层处理的是"HTTP 请求"，第二层处理的是"哪个工程"，第三层处理的才是"什么操作"**。
@@ -57,9 +57,9 @@ HTTP 请求
 
 所以这层解决的是"错误怎么出站"，不是"业务怎么处理"。
 
-### 1.2 Basic auth 只挡真正的业务请求
+### 1.2 Basic auth 只挡业务请求
 
-`server.ts:77-85` 这一层不是无条件认证，而是三段式判断：
+`server.ts:77-85` 这一层按三段式规则处理认证：
 
 1. 如果是 `OPTIONS`，直接 `next()`，保证浏览器跨域预检先过。
 2. 如果没配 `Flag.OPENCODE_SERVER_PASSWORD`，整层认证直接失效。
@@ -91,11 +91,11 @@ HTTP 请求
 1. `/global` 面向的是全局状态，不依赖某个具体目录。
 2. `/auth/:providerID` 读写的是 provider 凭据，也不该绑定到某个 project。
 
-也就是说，`createApp()` 先挂"与工程无关"的接口，再挂"必须先进入工程上下文才能执行"的接口。
+`createApp()` 先挂"与工程无关"的接口，再挂"进入工程上下文后执行"的接口。
 
 ### 2.2 `WorkspaceContext + Instance` 才是 runtime 入口
 
-`server.ts:192-218` 是整条链里最关键的一层，它真正把请求绑到某个 workspace 和目录上。
+`server.ts:192-218` 是整条链里的核心绑定层，请求会在这里进入某个 workspace 和目录。
 
 1. 先从 query `workspace` 或 header `x-opencode-workspace` 取 `workspaceID`。
 2. 再从 query `directory` 或 header `x-opencode-directory` 取目录；如果都没有，就退回 `process.cwd()`。
@@ -103,21 +103,21 @@ HTTP 请求
 4. 然后进入 `WorkspaceContext.provide(...)`。
 5. 在这个上下文里，再进入 `Instance.provide({ directory, init: InstanceBootstrap, fn })`。
 
-从这一层往后，路由里读到的 `Instance.directory`、`Instance.worktree`、`Instance.project`，才真正对应"这次请求指向的那份工程"。
+从这一层往后，路由里读到的 `Instance.directory`、`Instance.worktree`、`Instance.project` 对应的就是当前请求指向的工程。
 
-因此，多 workspace、多目录切换不是靠 session id 反推出来的，而是 Server 在进入业务路由前就把上下文注入好了。
+多 workspace、多目录切换由 Server 在进入业务路由前完成上下文注入。
 
 ### 2.3 远端 workspace 会在这里被转发
 
 紧接着的 `server.ts:219` 行 `WorkspaceRouterMiddleware` 还承担了一件额外的事：如果启用了 `Flag.OPENCODE_EXPERIMENTAL_WORKSPACES`，并且当前 workspace 是 remote，它会直接把请求转发给对应 adaptor。
 
-所以 `createApp()` 不只是"选中哪个 workspace"，还会决定"这个请求应该在本地处理，还是发到远端 workspace 处理"。
+`createApp()` 同时完成 workspace 选择与远端 workspace 转发决策。
 
 ---
 
 ## 第三阶段：业务路由层
 
-上下文绑定完成后，请求才真正进入"对某个工程做操作"的阶段。
+上下文绑定完成后，请求进入"对某个工程做操作"的阶段。
 
 ### 3.1 路由总览与主入口
 
@@ -134,7 +134,7 @@ HTTP 请求
 | `/event` | 当前 `Instance` 作用域下的 SSE 事件流 |
 | `/mcp`、`/pty`、`/config`、`/tui` | 外围能力 |
 
-当前工程里，真正把请求带入 agent runtime 的主入口仍然是 `/session`。
+当前工程里，把请求带入 agent runtime 的主入口是 `/session`。
 
 ### 3.2 `/session` 路由不只是 "send message"
 
@@ -178,7 +178,7 @@ HTTP 请求
 
 它用了 `hono/streaming` 的 `stream()`，但只是为了手动写 JSON，并没有把 token/reasoning/tool 事件直接通过这个响应体流出去。
 
-真正的实时通道是：
+实时通道位于：
 
 1. `GET /event`，见 `server/routes/event.ts:13-84`
 2. `GET /global/event`，见 `server/routes/global.ts:43-124`
@@ -213,7 +213,7 @@ HTTP 请求
 
 ## Server 层小结
 
-`Server.createApp()` 的本质不是"把很多路由塞进 Hono"，而是在定义一条固定的进入顺序：
+`Server.createApp()` 定义了一条固定的进入顺序：
 
 ```
 HTTP 请求
