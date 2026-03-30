@@ -2,7 +2,7 @@
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 
-C 系列是 B 系列的补充专题：动手实战请读 [B12](./B12-debugging.md)；本文是 plugin 系统深挖，适合在读完 [B09 扩展面](./B09-extension.md) 之后继续深究。
+C 系列是 B 系列的补充专题：本文是 plugin 系统深挖，适合在读完 [B09 扩展面](./B09-extension.md) 之后继续深究。
 
 如果不单独把 plugin 系统拎出来，很容易把 OpenCode 理解成“核心 runtime 固定，插件只是顺手挂几个工具”。当前实现不是这个结构。plugin 更像是 **runtime 内部的受信扩展层**：它不在外围做代理，而是直接插进 provider 装配、认证、tool 定义、session prompt 编译、LLM 请求、compaction 和 shell 环境构造这些核心节点里。
 

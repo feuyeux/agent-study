@@ -110,7 +110,7 @@ opencode models
 "OpenCode Zen"/"MiMo V2 Pro Free":
 
 ```
-bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts run -m opencode/mimo-v2-pro-free "hello"
+bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts run -m minimax-cn-coding-plan/MiniMax-M2.7 "hello"
 ```
 
 如果还要一起指定模型变体，也是在 `run` 子命令后继续补，例如：
@@ -161,17 +161,21 @@ RUN:
 
 - `File`：`packages/opencode/src/index.ts`
 - `Bun parameters`：`--cwd packages/opencode --conditions=browser`
-- `Arguments` / `Program arguments`：`run "hello"`
-
-如果要给这条 `run "hello"` 指定模型，就把模型参数直接写进 `Arguments` / `Program arguments`：
-
-"OpenCode Zen"/"MiMo V2 Pro Free":
-
-- `Arguments` / `Program arguments`：`run --model opencode/mimo-v2-pro-free "hello"`
+- `Arguments` / `Program arguments`：`run --model minimax-cn-coding-plan/MiniMax-M2.7 "hello"`
 
 如果还要指定模型变体：
 
 - `Arguments` / `Program arguments`：`run --model <provider>/<model> --variant high "hello"`
+
+
+
+>  查看opencode的模型使用如下命令。
+> 
+```powershell
+opencode models
+```
+
+
 
 调 MCP:
 
@@ -198,4 +202,4 @@ JetBrains 如果要看同样的日志，把下面这段放到 `Arguments` / `Pro
 ### 总结
 
 - VS Code：先跑 `bun run --inspect-brk=6499/opencode --cwd packages/opencode --conditions=browser src/index.ts`，再附加 `opencode (attach 6499)`
-- JetBrains：直接建一个 `Bun` 运行配置，`File` 指向 `packages/opencode/src/index.ts`，`Bun parameters` 填 `--cwd packages/opencode --conditions=browser`，具体子命令和模型参数都放到 `Arguments` / `Program arguments`，然后点 `Debug`
+- ###### JetBrains：直接建一个 `Bun` 运行配置，`File` 指向 `packages/opencode/src/index.ts`，`Bun parameters` 填 `--cwd packages/opencode --conditions=browser`，具体子命令和模型参数都放到 `Arguments` / `Program arguments`，然后点 `Debug`
