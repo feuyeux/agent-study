@@ -1,4 +1,4 @@
-# OpenCode 源码深度解析 A07：`LLM.stream()` 返回后，Durable State 如何写入、传播与再投影
+# OpenCode Durable State 如何写入、传播与再投影
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 > 核心代码：`packages/opencode/src/session/processor.ts`、`session/index.ts`、`session/message-v2.ts`
@@ -9,7 +9,7 @@ A06 已经说明请求如何进入 `streamText()`。A07 接着说明返回流如
 
 ## 1. A07 覆盖的主线范围
 
-从代码链路看，A07 负责下面这条后半程：
+`packages/opencode/src/session/processor.ts:54`
 
 ```ts
 const stream = await LLM.stream(streamInput)

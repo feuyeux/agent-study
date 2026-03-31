@@ -1,4 +1,4 @@
-# OpenCode 源码深度解析 A06：沿着 `processor()` 进入 `LLM.stream()`，看模型请求怎样发出去
+# OpenCode A06：`LLM.stream()`
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 
@@ -53,7 +53,7 @@ OpenCode 的 system prompt 由多层来源按固定顺序拼接。
 
 ## 3. provider prompt 的选择是硬编码策略，不是配置文件规则
 
-`packages/opencode/src/session/system.ts:18-26` 当前内置的 provider prompt 选择逻辑很直接：
+`packages/opencode/src/session/system.ts:18-26` 当前内置的 provider prompt (`packages/opencode/src/session/prompt/`)选择逻辑很直接：
 
 1. `gpt-4` / `o1` / `o3` 走 `PROMPT_BEAST`
 2. 其他 `gpt*` 走 `PROMPT_CODEX`

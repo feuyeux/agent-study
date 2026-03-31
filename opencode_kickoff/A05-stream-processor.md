@@ -1,4 +1,4 @@
-# OpenCode 源码深度解析 A05：`SessionProcessor.process()` 如何把单轮流事件写回 durable history
+# OpenCode A05：`SessionProcessor.process()` 
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 > 核心代码：`packages/opencode/src/session/processor.ts`

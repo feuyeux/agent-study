@@ -2,11 +2,9 @@
 
 > 本文档基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对；目标不是复述目录说明，而是把默认启动链真正经过哪些文件、最后是谁在驱动 agent 讲清楚。
 
-![](OpenCode_Architecture.png)
-
 ---
 
-## 1. 先盯住默认启动链上的 8 个源码跳点
+## 1. 默认启动链上的 8 个源码跳点
 
 如果只沿默认 `bun dev` / `opencode` 主线读代码，最关键的跳点其实只有这 8 个：
 

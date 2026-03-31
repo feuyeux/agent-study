@@ -1,4 +1,4 @@
-# OpenCode 源码深度解析 A01：多端入口与传输适配
+# OpenCode A01：多端入口与传输适配
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 

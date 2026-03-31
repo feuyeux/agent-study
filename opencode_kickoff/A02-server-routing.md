@@ -1,4 +1,4 @@
-# OpenCode 源码深度解析 A02：Server 与路由边界
+# OpenCode A02：Server 与路由边界
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 
