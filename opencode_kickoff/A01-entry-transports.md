@@ -170,6 +170,7 @@ TUI 主线程执行 `render()` 时，还要经历两层启动：先装配 Provid
 首屏同步分两阶段：
 
 **阻塞阶段**会并发请求：
+
 1. `config.providers`
 2. `provider.list`
 3. `app.agents`

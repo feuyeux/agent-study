@@ -84,7 +84,7 @@ SessionPrompt.prompt({
 
 ---
 
-## 4. `command` 是编排糖衣，不是另一条执行通道
+## 4. `command` 是编排语法糖，不是另一条执行通道
 
 `packages/opencode/src/session/prompt.ts:1823-1973` 的 `command()` 经常被当成独立执行器，其实它本质上只是：
 

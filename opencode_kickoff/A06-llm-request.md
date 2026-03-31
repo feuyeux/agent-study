@@ -55,12 +55,12 @@ OpenCode 的 system prompt 由多层来源按固定顺序拼接。
 
 `packages/opencode/src/session/system.ts:18-26` 当前内置的 provider prompt (`packages/opencode/src/session/prompt/`)选择逻辑很直接：
 
-1. `gpt-4` / `o1` / `o3` 走 `PROMPT_BEAST`
-2. 其他 `gpt*` 走 `PROMPT_CODEX`
-3. `gemini-*` 走 `PROMPT_GEMINI`
-4. `claude*` 走 `PROMPT_ANTHROPIC`
-5. `trinity` 走 `PROMPT_TRINITY`
-6. 否则走 `PROMPT_DEFAULT`
+1. `gpt-4` / `o1` / `o3` 走 `PROMPT_BEAST` `packages/opencode/src/session/prompt/beast.txt`
+2. 其他 `gpt*` 走 `PROMPT_CODEX` `packages/opencode/src/session/prompt/codex.txt`
+3. `gemini-*` 走 `PROMPT_GEMINI` `packages/opencode/src/session/prompt/gemini.txt`
+4. `claude*` 走 `PROMPT_ANTHROPIC` `packages/opencode/src/session/prompt/anthropic.txt`
+5. `trinity` 走 `PROMPT_TRINITY` `packages/opencode/src/session/prompt/trinity.txt`
+6. 否则走 `PROMPT_DEFAULT` `packages/opencode/src/session/prompt/default.txt`
 
 provider prompt 的选择由 runtime 中的模型家族策略直接决定。
 
@@ -226,6 +226,8 @@ A06 的终点是一轮 provider-aware 的 `streamText()` 调用，整份 session
 
 ## 10. AI SDK `streamText().fullStream` 一共有多少种状态
 
+> streamText <https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text>
+
 这一段重新把 `streamText()` 的状态集合梳一遍，因为如果不先分清“AI SDK 暴露了哪些状态”和“OpenCode 真正消费了哪些状态”，后面的时序就会越看越乱。
 
 先说结论：
@@ -248,7 +250,7 @@ for await (const value of stream.fullStream) {
 }
 ```
 
-也就是说，OpenCode看到的不是 provider 原始 chunk，而是 AI SDK 已经归一化、并补上 step 语义后的 `TextStreamPart`。
+**也就是说，OpenCode看到的不是 provider 原始 chunk，而是 AI SDK 已经归一化、并补上 step 语义后的 `TextStreamPart`。**
 
 对 OpenCode 来说，应该盯住的是 `fullStream` 这一层。
 

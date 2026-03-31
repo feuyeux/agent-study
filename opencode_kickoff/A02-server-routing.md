@@ -35,6 +35,7 @@ HTTP 请求
 三层的核心区别在于：**第一层处理的是"HTTP 请求"，第二层处理的是"哪个工程"，第三层处理的才是"什么操作"**。
 
 对应到代码文件：
+
 - `server/server.ts:55-253` —— 前两个阶段的全部逻辑（中间件链 + 全局路由 + 上下文绑定）。
 - `server/routes/session.ts` —— `/session` 路由，是 runtime 的 API 主入口。
 - `server/routes/global.ts` —— `/global` 路由，全局事件和配置。

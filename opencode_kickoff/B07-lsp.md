@@ -2,7 +2,7 @@
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 
-很多 agent 项目把 LSP 讲成“编辑器增强”或“一个可选工具”。OpenCode 当前实现更接近另一种思路：LSP 是一层**按文件类型懒启动、按工程根分片、为 runtime 提供代码理解与诊断回路的基础设施**。它既不是主执行器，也不是纯 UI 附件，但会直接影响 read、prompt 编译、编辑后纠错和状态面板。
+很多 agent 项目把 LSP(Language Server Protocol) 讲成“编辑器增强”或“一个可选工具”。OpenCode 当前实现更接近另一种思路：LSP 是一层**按文件类型懒启动、按工程根分片、为 runtime 提供代码理解与诊断回路的基础设施**。它既不是主执行器，也不是纯 UI 附件，但会直接影响 read、prompt 编译、编辑后纠错和状态面板。
 
 ---
 
@@ -17,6 +17,66 @@
 | 消费层 | `tool/read.ts:215-217`、`tool/write.ts:54-82`、`tool/edit.ts:146-160`、`tool/apply_patch.ts:234-269`、`session/prompt.ts:1148-1167` | 把 LSP 能力接回主链路。 |
 
 所以 OpenCode 的 LSP 不是“给模型多开了个查询接口”，而是“在文件读写循环旁边挂了一层代码语义反馈”。
+
+### 1.1 LSP 在 OpenCode 里的工作原理总图
+
+下面这张图可以先建立一个整体心智模型：OpenCode 并不是在启动时一次性拉起所有语言服务器，而是先注册能力；等到 `read`、`write`、`edit`、`apply_patch`、prompt 编译里的 symbol 查询，或者实验态 `lsp` tool 真正命中文件时，再按 `扩展名 + root` 找 client，必要时懒启动 language server。后续同一个 `(root, serverID)` 会被复用，文件变化通过 `didOpen` / `didChange` 主动同步给 server，再把 diagnostics 和 symbol 结果接回主链路。
+
+```mermaid
+flowchart TD
+    Boot["InstanceBootstrap()<br/>LSP.init()"]
+    Registry["配置与注册表<br/>Config.lsp + LSPServer"]
+    Trigger["触发点<br/>read / write / edit / apply_patch<br/>prompt symbol 查询 / 实验态 lsp tool"]
+    Match["LSP.getClients(file)<br/>按扩展名和 root 匹配"]
+    Reuse{"已有同 root + serverID client?"}
+    Spawn["spawn language server<br/>LSPClient.create()"]
+    Guard["spawning / broken<br/>并发去重与失败隔离"]
+    Client["LSP client<br/>stdio JSON-RPC"]
+    Sync["touchFile()<br/>didOpen / didChange"]
+    Server["Language Server"]
+    Diag["publishDiagnostics"]
+    Cache["诊断缓存与聚合<br/>LSP.diagnostics()"]
+    FixLoop["write/edit/apply_patch<br/>把错误回喂模型"]
+    Status["Bus -> lsp.updated -> /lsp -> TUI 状态面板"]
+    Query["definition / references / hover<br/>documentSymbol / workspaceSymbol"]
+    Prompt["prompt.ts / file route / lsp tool<br/>消费 symbol 和 definition 结果"]
+
+    Boot --> Registry
+    Registry --> Trigger
+    Trigger --> Match
+    Match --> Reuse
+    Reuse -->|复用已有 client| Client
+    Reuse -->|没有则懒启动| Spawn
+    Spawn --> Guard
+    Guard -->|成功| Client
+    Guard -.失败后标记 broken.-> Match
+    Client --> Sync
+    Sync --> Server
+    Server --> Diag
+    Diag --> Cache
+    Cache --> FixLoop
+    Cache --> Status
+    Client --> Query
+    Query --> Server
+    Server --> Prompt
+
+    classDef runtime fill:#DCFCE7,stroke:#16A34A,color:#14532D;
+    classDef bridge fill:#FEF3C7,stroke:#D97706,color:#78350F;
+    classDef server fill:#F3F4F6,stroke:#6B7280,color:#111827;
+    classDef consumer fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A;
+
+    class Boot,Registry,Trigger,Match,Reuse,Spawn,Guard,Client,Sync runtime;
+    class Diag,Cache,Query bridge;
+    class Server server;
+    class FixLoop,Status,Prompt consumer;
+```
+
+这张图里其实有两条并行但会共享 client 的链：
+
+1. `touchFile -> diagnostics -> 编辑后纠错`，这是当前最常用的一条。
+2. `symbol/query -> prompt/file route/lsp tool`，这是代码理解与定位链。
+
+二者共享同一套 client 复用、root 分片、懒启动和失败隔离机制。
 
 ---
 
@@ -267,7 +327,247 @@ TUI 侧在 `packages/opencode/src/cli/cmd/tui/context/sync.tsx:343-345` 监听 `
 
 ---
 
-## 12. 把 B07 压成一句代码级结论
+## 12. LSP 在 OpenCode 里实际发挥作用的四个场景
+
+如果把前面的实现细节压回“runtime 到底在什么时候真的用上了 LSP”，当前最值得记住的是下面四个场景。
+
+### 12.1 先看端到服务、再到服务内部的组件交互
+
+前一版图把“场景流转”画出来了，但你如果要真正建立工程级心智模型，还需要再补一层：**谁是入口，谁是统一门面，谁在维护 client 池，谁真正和外部 language server 通信，结果又是怎样回流到工具、prompt 和 TUI 的。**
+
+下面这张图专门补“组件关系 + 交互方向”。
+
+```mermaid
+flowchart LR
+    subgraph End["端侧"]
+        UI["TUI / CLI / Desktop / SDK"]
+    end
+
+    subgraph Service["OpenCode 服务进程"]
+        subgraph Entry["入口与消费层"]
+            Prompt["SessionPrompt.loop()<br/>prompt.ts"]
+            Read["read.ts"]
+            Edit["write.ts / edit.ts / apply_patch.ts"]
+            LspTool["tool/lsp.ts<br/>实验态显式查询"]
+            Status["server /lsp<br/>TUI sync"]
+        end
+
+        subgraph Facade["LSP 门面与调度层"]
+            LSPMod["lsp/index.ts<br/>init status getClients<br/>touchFile diagnostics query"]
+            Registry["LSPServer + Config.lsp<br/>extensions root spawn"]
+            Pool["clients / spawning / broken"]
+        end
+
+        subgraph ClientLayer["LSP client 与事件层"]
+            Client["lsp/client.ts<br/>initialize didOpen didChange<br/>waitForDiagnostics"]
+            Bus["Bus<br/>lsp.updated + diagnostics event"]
+        end
+    end
+
+    subgraph External["外部 Language Server 进程"]
+        LS["typescript / eslint / gopls / pyright / ..."]
+    end
+
+    UI -->|发起会话与查看状态| Prompt
+    UI -->|查询 LSP 状态| Status
+
+    Prompt -->|symbol 补偿查询| LSPMod
+    Read -->|touchFile false| LSPMod
+    Edit -->|touchFile true + diagnostics| LSPMod
+    LspTool -->|definition refs hover 等| LSPMod
+    Status -->|status()| LSPMod
+
+    LSPMod -->|按扩展名与 root 选 server| Registry
+    LSPMod -->|复用或创建 client| Pool
+    Pool -->|create or reuse| Client
+    Client -->|JSON RPC stdio| LS
+    LS -->|diagnostics and query result| Client
+
+    Client -->|publish diagnostics| Bus
+    Client -->|返回 query 结果| LSPMod
+
+    Bus -->|waitForDiagnostics / diagnostics()| Edit
+    Bus -->|lsp.updated| Status
+    LSPMod -->|symbol range result| Prompt
+    LSPMod -->|definition hover refs result| LspTool
+    LSPMod -->|connected clients| Status
+
+    classDef endSide fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A;
+    classDef entry fill:#DCFCE7,stroke:#16A34A,color:#14532D;
+    classDef facade fill:#FEF3C7,stroke:#D97706,color:#78350F;
+    classDef client fill:#FDE68A,stroke:#B45309,color:#78350F;
+    classDef external fill:#F3F4F6,stroke:#6B7280,color:#111827;
+
+    class UI endSide;
+    class Prompt,Read,Edit,LspTool,Status entry;
+    class LSPMod,Registry,Pool,Bus facade;
+    class Client client;
+    class LS external;
+```
+
+这张图要点有三个：
+
+1. 端侧不会直接碰 language server，而是统一通过 OpenCode 服务里的入口层和 `LSP` 门面层转发。
+2. `lsp/index.ts` 才是 LSP 子系统的统一调度门面；`LSPServer` 负责“有哪些 server、扩展名和 root 怎么匹配、如何 spawn”，`LSPClient` 负责真正的 JSON-RPC 通信。
+3. 回流有两条路：`query result` 直接回到调用者模块，`diagnostics` 先进入 `Bus`，再喂给 `waitForDiagnostics()`、`diagnostics()` 聚合和 TUI 状态刷新。
+
+### 12.2 再看四个高频场景总图
+
+这张图不再只画“步骤”，而是把四个高频场景怎样穿过同一套 LSP 组件，也一并压在一张图里。
+
+```mermaid
+flowchart LR
+    Caller["端侧请求进入 OpenCode 服务"]
+
+    subgraph Scene["四个高频入口场景"]
+        WarmIn["场景 1<br/>read.ts"]
+        EditIn["场景 2<br/>write.ts / edit.ts / apply_patch.ts"]
+        PromptIn["场景 3<br/>prompt.ts symbol 补偿"]
+        ToolIn["场景 4<br/>tool/lsp.ts 实验态查询"]
+    end
+
+    subgraph Core["服务内部共享 LSP 组件"]
+        LSPMod["lsp/index.ts<br/>touchFile diagnostics<br/>documentSymbol definition"]
+        Pool["getClients()<br/>clients / spawning / broken"]
+        Client["lsp/client.ts<br/>initialize didOpen didChange<br/>waitForDiagnostics"]
+        Bus["Bus<br/>diagnostics event"]
+    end
+
+    LS["Language Server"]
+
+    subgraph Return["结果回流"]
+        WarmOut["相关 client 已预热<br/>后续命中更快"]
+        EditOut["severity=1 错误进入 tool output<br/>形成修改后纠错闭环"]
+        PromptOut["symbol range 被修正<br/>更可靠片段进入 prompt"]
+        ToolOut["definition / references / hover 等结果<br/>返回给 lsp tool"]
+    end
+
+    Caller --> WarmIn
+    Caller --> EditIn
+    Caller --> PromptIn
+    Caller --> ToolIn
+
+    WarmIn -->|touchFile false| LSPMod
+    EditIn -->|touchFile true| LSPMod
+    PromptIn -->|symbol query| LSPMod
+    ToolIn -->|hasClients touchFile query| LSPMod
+
+    LSPMod --> Pool --> Client --> LS
+    LS --> Client
+    Client -->|query result| LSPMod
+    Client -->|publishDiagnostics| Bus
+
+    LSPMod --> WarmOut
+    Bus --> EditOut
+    LSPMod --> PromptOut
+    LSPMod --> ToolOut
+
+    classDef entry fill:#DCFCE7,stroke:#16A34A,color:#14532D;
+    classDef core fill:#FEF3C7,stroke:#D97706,color:#78350F;
+    classDef external fill:#F3F4F6,stroke:#6B7280,color:#111827;
+    classDef result fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A;
+
+    class Caller,WarmIn,EditIn,PromptIn,ToolIn entry;
+    class LSPMod,Pool,Client,Bus core;
+    class LS external;
+    class WarmOut,EditOut,PromptOut,ToolOut result;
+```
+
+### 12.3 场景一：`read` 只是预热，不阻塞主流程
+
+对应代码：`packages/opencode/src/tool/read.ts:215-217`
+
+这里的动作非常克制：
+
+1. 文件读完后调用 `LSP.touchFile(filepath, false)`
+2. 不等待 diagnostics
+3. 不把 symbol 结果直接塞回本次 read 输出
+
+所以它的作用不是“读文件时顺便做智能分析”，而是：
+
+1. 让匹配的 `(root + serverID)` client 提前连起来
+2. 让后续的 symbol 查询和 diagnostics 能更快命中
+
+也就是说，LSP 在 `read` 环节承担的是**预热基础设施**，不是主结果生产者。
+
+### 12.4 场景二：`write/edit/apply_patch` 后立即回收 diagnostics
+
+对应代码：
+
+1. `packages/opencode/src/tool/write.ts:54-82`
+2. `packages/opencode/src/tool/edit.ts:146-160`
+3. `packages/opencode/src/tool/apply_patch.ts:234-269`
+
+这是 LSP 当前最核心、最高频的实际用途：
+
+1. 编辑工具先把变更落盘
+2. 再 `LSP.touchFile(..., true)`，让 runtime 主动把新文件内容同步给 language server
+3. 等 `publishDiagnostics` 回来
+4. 用 `LSP.diagnostics()` 聚合所有 client 的诊断
+5. 把严重错误格式化进 tool output，让模型继续修
+
+所以在 OpenCode 里，LSP 最重要的价值不是抽象意义上的“代码智能”，而是非常具体的：
+
+1. 把编辑行为闭成“修改 -> 诊断 -> 再修正”的反馈回路
+2. 让模型在同一轮或下一轮里直接看到静态分析/编译级错误
+
+### 12.5 场景三：prompt 编译时补 symbol 区间精度
+
+对应代码：`packages/opencode/src/session/prompt.ts:1148-1167`
+
+这条链比较隐蔽，但很关键。
+
+当 prompt 编译阶段要把某个 symbol 变成具体文件片段时，如果某些 server 给出的 `workspace/symbol` 结果只有退化 range，OpenCode 会：
+
+1. 继续调用 `LSP.documentSymbol()`
+2. 用 document 级 symbol 树修正更完整的区间
+3. 再把修正后的片段送进上下文
+
+所以这里 LSP 发挥的作用不是“替代 read/grep”，而是：
+
+1. 给 `file:` / symbol 引用补精度
+2. 降低送进模型的代码片段范围不准、截断不对的风险
+
+### 12.6 场景四：实验态把 LSP 显式暴露成 tool
+
+对应代码：
+
+1. `packages/opencode/src/tool/registry.ts:124-132`
+2. `packages/opencode/src/tool/lsp.ts:23-84`
+
+默认情况下，LSP 虽然已经在 runtime 内部工作，但并不会完整暴露给模型直接调用。只有打开 `OPENCODE_EXPERIMENTAL_LSP_TOOL` 后，模型才会得到一组显式查询能力：
+
+1. `definition`
+2. `references`
+3. `hover`
+4. `documentSymbol`
+5. `workspaceSymbol`
+6. `implementation`
+7. `call hierarchy`
+
+而且这条链也不是直接裸调，而是要先过：
+
+1. `permission: "lsp"`
+2. `hasClients(file)`
+3. `touchFile(file, true)`
+
+所以这一层说明的是：
+
+1. OpenCode 工程内部已经把 LSP 当作基础设施
+2. 但对模型显式开放这组能力仍然很克制，只放在实验面
+
+### 12.7 把这四个场景压成一句话
+
+如果只记一条总判断，可以记成：
+
+1. `read` 阶段，LSP 负责预热。
+2. `write/edit/apply_patch` 阶段，LSP 负责诊断闭环。
+3. `prompt` 编译阶段，LSP 负责 symbol 精度补偿。
+4. 实验态 `lsp` tool 阶段，LSP 才变成显式查询接口。
+
+---
+
+## 13. 把 B07 压成一句代码级结论
 
 OpenCode 当前对 LSP 的使用方式，可以压成四句话：
 
