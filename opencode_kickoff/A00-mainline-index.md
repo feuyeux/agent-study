@@ -172,9 +172,3 @@ A 系列只盯主链，不会把这些专题塞进每一篇里反复展开：
 3. 接着看 [A06](./A06-llm-request.md) 和 [A07](./A07-durable-state.md)，理解“请求怎样发出去、结果怎样落回来”。
 4. 最后回看 [B01](./B01-model.md) 到 [B10](./B10-skill.md)，补对象模型、上下文工程、韧性、基础设施，以及 LSP、启动配置和扩展系统。
 
----
-
-## 8. 补充材料
-
-1. [infographic.html](./infographic.html)：一页式图解版摘要，适合在正式通读前快速建立模块关系。
-2. [OpenCode_Architecture.png](./OpenCode_Architecture.png)：README 顶部使用的架构图原图。

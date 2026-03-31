@@ -2,7 +2,80 @@
 
 > 本文基于 `opencode` `v1.3.2`（tag `v1.3.2`，commit `0dcdf5f529dced23d8452c9aa5f166abb24d8f7c`）源码校对
 
-前面的 A/B 章节大多从“请求已经进入 runtime”开始讲。但在 OpenCode 当前实现里，很多关键行为其实发生在第一条 prompt 之前：全局目录准备、日志与数据库迁移、配置叠加、`.opencode` 目录装载、依赖安装，以及 `InstanceBootstrap()` 固定服务图初始化。B08 的任务，就是把这条“启动前半场”讲清楚。
+前面的 A/B 章节大多从”请求已经进入 runtime”开始讲。但在 OpenCode 当前实现里，很多关键行为其实发生在第一条 prompt 之前：全局目录准备、日志与数据库迁移、配置叠加、`.opencode` 目录装载、依赖安装，以及 `InstanceBootstrap()` 固定服务图初始化。B08 的任务，就是把这条”启动前半场”讲清楚。
+
+---
+
+## 0. 工程框架概览：代码组织与构建体系
+
+### 0.1 当前是 Turborepo monorepo，核心分为三个包
+
+> Monorepo（单体仓库）
+> Turborepo（Vercel 出品）是 Monorepo 工具链的一种具体实现，专门针对 Node.js/TypeScript 生态。
+
+| 包 | 路径 | 职责 |
+| --- | --- | --- |
+| `packages/opencode` | `packages/opencode/src/` | 核心 runtime：server、session、llm、config、bus、storage、plugin 等 |
+| `cli` | `cli/` | 命令行入口：run、tui、attach、desktop 等命令的 CLI 入口 |
+| 工具包（内部） | `packages/*/` | provider、sdk 等内部共享包 |
+
+`packages/opencode` 是核心，`cli` 依赖它。两者都走 TypeScript + Bun 构建。
+
+### 0.2 `packages/opencode/src` 下的主目录结构
+
+```
+src/
+  index.ts                 # CLI middleware 入口，Log/init/migration 注册
+  global/index.ts          # XDG 目录、缓存版本、进程级全局路径计算
+  config/
+    config.ts              # Config.get() 主实现：多来源配置合并、plugin 加载
+    paths.ts               # 项目配置发现（opencode.jsonc）和 .opencode 目录遍历
+  server/
+    server.ts              # Hono app：middleware 链、路由挂载
+    routes/
+      session.ts           # /session/:id/message 等核心 session 路由
+      event.ts             # /event SSE 端点（Bus 投影）
+      global.ts            # /global/event 端点（GlobalBus 投影）
+  session/
+    prompt.ts              # prompt() / loop()：输入编译和执行状态机
+    processor.ts           # processor.process()：消费单轮 LLM 流事件
+    llm.ts                 # LLM.stream() 封装、provider 调用
+    system.ts              # system prompt 编译
+    index.ts               # Session.updateMessage() / updatePart() 落库
+    message-v2.ts          # MessageV2 durable 模型和 toModelMessages() 投影
+    status.ts              # SessionStatus（busy/retry/idle）实例作用域状态
+  bus/
+    index.ts               # Bus（instance-scoped）和 GlobalBus（进程级）实现
+  storage/
+    db.ts                  # Database.use() / transaction() / effect() SQLite 封装
+    storage.ts             # JSON Storage（session_diff 等派生数据）
+  project/
+    bootstrap.ts           # InstanceBootstrap() 固定服务装配顺序
+    instance.ts            # Instance / WorkspaceContext 请求作用域绑定
+  plugin/
+    index.ts               # Plugin.init() 和 plugin 动态加载
+  provider/
+    provider.ts            # provider prompt 编译和模型调用封装
+  cli/
+    cmd/
+      run.ts / tui/*       # CLI 命令实现（默认 $0 [project] 走 tui/thread.ts）
+```
+
+### 0.3 构建链路简述
+
+```
+opencode/package.json (dev)
+  -> packages/opencode/src/index.ts       # runtime 入口
+  -> cli/cmd/tui/thread.ts                 # 默认命令解析
+  -> server/server.ts                     # Hono server 启动
+  -> 监听 127.0.0.1:18789                 # 默认端口
+```
+
+`cli` 包和 `packages/opencode` 包各自独立 TypeScript 编译，产物用 Bun run 执行。
+
+### 0.4 为什么这个结构值得先看
+
+`packages/opencode/src/index.ts` 只做 middleware 注册和命令分发，不含任何 session 逻辑。真正的执行链是从 `cli/cmd/tui/thread.ts` 发请求到 `server/server.ts` 才开始的。这条冷路径（启动路径）和 A01-A07 的热路径（执行路径）在代码上完全分离，是理解 OpenCode 架构的第一步。
 
 ---
 
